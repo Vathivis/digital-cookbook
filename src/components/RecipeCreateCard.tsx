@@ -7,7 +7,7 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
-import { GripVertical, X as XIcon } from 'lucide-react';
+import { GripVertical, X as XIcon, ImagePlus } from 'lucide-react';
 import { TagSuggestions } from './TagSuggestions';
 
 type EditableIngredient = StructuredIngredient & { _k: string };
@@ -114,13 +114,41 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	setOpen(false);
 	onCreated();
 	};
-	const onPickImage = (file?: File) => {
+	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const reader = new FileReader();
 		reader.onload = () => setPhoto(reader.result as string);
 		reader.readAsDataURL(file);
-	};
+	}, [setPhoto]);
 	const [photoDrag, setPhotoDrag] = useState(false);
+	const photoInputRef = useRef<HTMLInputElement | null>(null);
+	useEffect(() => {
+		if (!open) return;
+		const handlePaste = (event: ClipboardEvent) => {
+			const clipboardData = event.clipboardData;
+			if (!clipboardData) return;
+			const files = clipboardData.files;
+			const primaryFile = files && files.length > 0 ? files[0] : undefined;
+			if (primaryFile && primaryFile.type.startsWith('image/')) {
+				event.preventDefault();
+				onPickImage(primaryFile);
+				return;
+			}
+			const items = clipboardData.items;
+			if (!items?.length) return;
+			for (let i = 0; i < items.length; i++) {
+				const item = items[i];
+				if (!item || !item.type.startsWith('image/')) continue;
+				const file = item.getAsFile();
+				if (!file) continue;
+				event.preventDefault();
+				onPickImage(file);
+				return;
+			}
+		};
+		window.addEventListener('paste', handlePaste);
+		return () => window.removeEventListener('paste', handlePaste);
+	}, [open, onPickImage]);
 	const ingredientListRef = useRef<HTMLDivElement | null>(null);
 	const stepListRef = useRef<HTMLDivElement | null>(null);
 const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'ing' | 'step', index: number) => {
@@ -318,12 +346,45 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 					</DialogHeader>
 					<div className="max-h-[70vh] overflow-auto">
 						<div className="flex gap-4">
-							<div className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative ${photoDrag?'ring-2 ring-primary/60':''}`}
+							<input
+								ref={photoInputRef}
+								type="file"
+								accept="image/*"
+								className="hidden"
+								onChange={e=>{
+									onPickImage(e.target.files?.[0] || undefined);
+									e.target.value = '';
+								}}
+							/>
+							<button
+								type="button"
+								aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
+								onClick={()=>photoInputRef.current?.click()}
+								className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag?'ring-2 ring-primary/60':''}`}
 								onDragOver={e=>{e.preventDefault(); setPhotoDrag(true);}}
+								onDragEnter={e=>{e.preventDefault(); setPhotoDrag(true);}}
 								onDragLeave={()=>setPhotoDrag(false)}
-								onDrop={e=>{e.preventDefault(); setPhotoDrag(false); onPickImage(e.dataTransfer.files?.[0]);}}>
-								{photo ? <img src={photo} className="object-cover w-full h-full"/> : <span className="text-xs text-muted-foreground">Photo</span>}
-							</div>
+								onDrop={e=>{
+									e.preventDefault();
+									setPhotoDrag(false);
+									const file = e.dataTransfer.files?.[0];
+									if (file) onPickImage(file);
+								}}
+							>
+								{photo ? (
+									<>
+										<img src={photo} alt="Recipe photo preview" className="object-cover w-full h-full" />
+										<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
+											<ImagePlus className="h-4 w-4" />
+										</div>
+									</>
+								) : (
+									<div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-muted-foreground">
+										<ImagePlus className="h-6 w-6" />
+										<span>Click, paste (Ctrl+V), or drop an image</span>
+									</div>
+								)}
+							</button>
 							<div className="flex-1 flex flex-col gap-2">
 								<Input placeholder="Title" value={title} onChange={e=>setTitle(e.target.value)} className="text-xl font-semibold" />
 								<Input placeholder="Author" value={author} onChange={e=>setAuthor(e.target.value)} />
@@ -445,12 +506,8 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 							</div>
 						</div>
 						<div className="mt-4 flex items-center gap-4">
-							<label className="relative inline-flex items-center">
-								<input id="photo-input" type="file" accept="image/*" className="sr-only" onChange={e=>onPickImage(e.target.files?.[0] || undefined)} />
-								<Button type="button" variant="outline" onClick={()=>document.getElementById('photo-input')?.click()}>Upload Photo</Button>
-							</label>
 							<Button onClick={submit}>Save Recipe</Button>
-							<Button variant="outline" onClick={()=>{ resetForm(); setOpen(false); }} className="ml-auto">Cancel</Button>
+							<Button variant="outline" onClick={()=>{ resetForm(); setOpen(false); }}>Cancel</Button>
 						</div>
 					</div>
 				</DialogContent>
