@@ -23,7 +23,7 @@ GET /api/cookbooks; POST /api/cookbooks { name }
 
 GET /api/recipes?cookbookId=ID (returns list with tags[], likes[] embedded)
 
-GET /api/recipes/search?cookbookId=ID&q=term (Fuse.js fuzzy over title/description/tags/likes)
+GET /api/recipes/search?cookbookId=ID&q=term (SQL LIKE/EXISTS filter across title/description/tags/likes; capped to 200 rows)
 
 GET /api/recipes/:id (full recipe w/ ingredients[], steps[], notes, tags[], likes[])
 
@@ -62,7 +62,7 @@ Patterns:
 - Mirror client function in `src/lib/api.ts`; keep naming verb-first (e.g., `addX`, `removeX`, `searchRecipes`).
 - Extend recipe shape: Update SQL schema (migration strategy currently = startup create-if-not-exists; adding columns is safe with `ALTER TABLE`). Reflect changes in list and single GET queries; adjust `api.ts` types + consuming components.
 - Maintain list endpoint contract: must include tags[] & likes[] to avoid extra per-card fetches. If you add counts/aggregates, compute in same query batch.
-- For new fuzzy fields, include them in Fuse keys list in `/api/recipes/search` or adjust threshold as needed.
+- For new searchable fields, extend the SQL `LIKE`/`EXISTS` clauses in `/api/recipes/search` so filtering happens in the database.
 
 ## 7. Performance / Gotchas
 - Avoid N+1 on tags/likes: Current pattern batches by collecting recipe IDs then querying IN (...). Follow that style for new per-recipe metadata.

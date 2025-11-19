@@ -5,7 +5,7 @@ Digital Cookbook is a full-stack recipe manager built with **Bun + React + Vite 
 ## Tech Stack
 - **Frontend:** React 19, TypeScript, Vite, Tailwind, shadcn.
 - **Backend:** Elysia (Bun) with the `bun:sqlite` driver storing data in `data/cookbook.db` (WAL + foreign keys enabled).
-- **Tooling:** Bun scripts for dev/build/test, ESLint, Fuse.js for fuzzy search, custom FLIP animation hook.
+- **Tooling:** Bun scripts for dev/build/test, ESLint, server-side SQL search, custom FLIP animation hook.
 
 ## Highlighted Features
 - Multiple cookbooks with inline rename/delete and confirmation flows.
@@ -30,7 +30,7 @@ Filter recipes with AND/OR logic to narrow down to exact tag combinations or qui
 Adjust servings directly on the recipe card; ingredient quantities recalculate on the fly so shopping lists always match the desired portion size.
 
 ### Debounced search & animations
-Typing in the search bar triggers a 200 ms debounced fuzzy lookup with Fuse.js, while the recipe grid animates insertions/removals using FLIP-based transitions.
+Typing in the search bar triggers a 200 ms debounced SQL-backed lookup (LIKE/EXISTS matching across title, description, tags, likes), while the recipe grid animates insertions/removals using FLIP-based transitions.
 
 ### Engagement tracking
 Recipes track likes and usage counts, with optimistic UI updates to keep interactions feeling instant.

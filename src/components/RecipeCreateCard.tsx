@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { PointerEvent as ReactPointerEvent, CSSProperties, KeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { createRecipe, listTags, type StructuredIngredient } from '../lib/api';
+import { loadImageDataUrl } from '../lib/image';
+import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -41,6 +43,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const [steps, setSteps] = useState<EditableStep[]>([createBlankStep()]);
 	const [notes, setNotes] = useState('');
 	const [photo, setPhoto] = useState<string | undefined>();
+	const imageTaskRef = useRef(0);
 	const [tagList, setTagList] = useState<string[]>([]);
 	const [addingTag, setAddingTag] = useState(false);
 	const [tagValue, setTagValue] = useState('');
@@ -116,10 +119,15 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	};
 	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = () => setPhoto(reader.result as string);
-		reader.readAsDataURL(file);
-	}, [setPhoto]);
+		const taskId = ++imageTaskRef.current;
+		loadImageDataUrl(file)
+			.then((dataUrl) => {
+				if (imageTaskRef.current === taskId) {
+					setPhoto(dataUrl);
+				}
+			})
+			.catch((error) => console.error('Failed to process image', error));
+	}, []);
 	const [photoDrag, setPhotoDrag] = useState(false);
 	const photoInputRef = useRef<HTMLInputElement | null>(null);
 	useEffect(() => {
@@ -151,100 +159,16 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	}, [open, onPickImage]);
 	const ingredientListRef = useRef<HTMLDivElement | null>(null);
 	const stepListRef = useRef<HTMLDivElement | null>(null);
-const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'ing' | 'step', index: number) => {
-		if (e.button !== 0) return;
-		e.preventDefault();
-		e.stopPropagation();
-
-		const button = e.currentTarget as HTMLElement;
-		button.setPointerCapture(e.pointerId);
-
-		const list = kind === 'ing' ? ingredientListRef.current : stepListRef.current;
-		if (!list) return;
-		const items = Array.from(list.querySelectorAll('[data-drag-item]')) as HTMLElement[];
-		const row = items[index];
-		if (!row) return;
-		const rect = row.getBoundingClientRect();
-		const offsetY = e.clientY - rect.top;
-		const placeholder = document.createElement('div');
-		placeholder.style.height = rect.height + 'px';
-		placeholder.style.border = '2px dashed var(--border)';
-		placeholder.style.borderRadius = '0.5rem';
-		placeholder.style.background = 'var(--accent)';
-		placeholder.style.opacity = '0.25';
-		placeholder.setAttribute('data-drag-placeholder', '');
-		row.parentElement?.insertBefore(placeholder, row);
-		row.style.display = 'none';
-		const clone = row.cloneNode(true) as HTMLElement;
-		clone.style.position = 'fixed';
-		clone.style.top = rect.top + 'px';
-		clone.style.left = rect.left + 'px';
-		clone.style.width = rect.width + 'px';
-		clone.style.zIndex = '1000';
-		clone.style.pointerEvents = 'none';
-		clone.style.boxShadow = '0 4px 16px -2px rgba(0,0,0,0.35)';
-		clone.style.background = 'var(--card)';
-		clone.classList.add('drag-follow');
-		document.body.appendChild(clone);
-		const startIndex = index;
-		function onMove(ev: PointerEvent) {
-			const y = ev.clientY - offsetY;
-			clone.style.top = y + 'px';
-			const centerY = y + rect.height / 2;
-			const siblings = Array.from(list.querySelectorAll('[data-drag-item]')).filter(el => el !== row) as HTMLElement[];
-			let inserted = false;
-			for (const sib of siblings) {
-				if (sib.style.display === 'none') continue;
-				const r = sib.getBoundingClientRect();
-				const mid = r.top + r.height / 2;
-				if (centerY < mid) {
-					if (sib.previousSibling !== placeholder) {
-						list.insertBefore(placeholder, sib);
-					}
-					inserted = true;
-					break;
-				}
-			}
-			if (!inserted) {
-				const addBtn = list.querySelector('[data-add-control="'+kind+'"]');
-				if (addBtn) list.insertBefore(placeholder, addBtn);
-				else list.appendChild(placeholder);
-			}
-		}
-		let finished = false;
-		const finishDrag = () => {
-			if (finished) return;
-			finished = true;
-			try {
-				button.releasePointerCapture(e.pointerId);
-			} catch {
-				// ignore release errors
-			}
-			button.removeEventListener('pointermove', onMove);
-			button.removeEventListener('pointerup', finishDrag);
-			button.removeEventListener('pointercancel', finishDrag);
-			button.removeEventListener('lostpointercapture', finishDrag);
-			document.body.style.cursor = '';
-			clone.remove();
-			row.style.display = '';
-			const children = Array.from(list.children);
-			const phIndex = children.indexOf(placeholder);
-			placeholder.remove();
-			if (phIndex === -1 || phIndex === startIndex) return;
-			const from = startIndex;
-			let to = phIndex;
-			if (to > from) to -= 1;
-			if (from === to) return;
-			if (kind === 'ing') setIngredients(prev => reorderArray(prev, from, to));
-			else setSteps(prev => reorderArray(prev, from, to));
-		};
-
-		document.body.style.cursor = 'grabbing';
-		button.addEventListener('pointermove', onMove);
-		button.addEventListener('pointerup', finishDrag);
-		button.addEventListener('pointercancel', finishDrag);
-		button.addEventListener('lostpointercapture', finishDrag);
-	}, [setIngredients, setSteps]);
+	const ingredientDrag = useReorderDrag({
+		containerRef: ingredientListRef,
+		addControlSelector: '[data-add-control="ing"]',
+		onReorder: (from, to) => setIngredients(prev => reorderArray(prev, from, to))
+	});
+	const stepDrag = useReorderDrag({
+		containerRef: stepListRef,
+		addControlSelector: '[data-add-control="step"]',
+		onReorder: (from, to) => setSteps(prev => reorderArray(prev, from, to))
+	});
 
 	useEffect(() => {
 		if (!addingTag) return;
@@ -285,6 +209,17 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 	}, [tagValue, addingTag, allTags]);
 
 	useEffect(() => { setHighlight(-1); }, [filteredTags]);
+	useEffect(() => {
+		if (!addingTag) return;
+		const handlePointerDown = (event: PointerEvent) => {
+			const target = event.target as Node;
+			if (tagBoxRef.current?.contains(target)) return;
+			if (tagSuggestionsNode?.contains(target as HTMLElement)) return;
+			setAddingTag(false);
+		};
+		document.addEventListener('pointerdown', handlePointerDown);
+		return () => document.removeEventListener('pointerdown', handlePointerDown);
+	}, [addingTag, tagSuggestionsNode]);
 
 	useEffect(() => {
 		if (highlight < 0 || !tagSuggestionsNode) return;
@@ -410,7 +345,7 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 									<div ref={ingredientListRef} className="space-y-2">
 										{ingredients.map((ing, idx) => (
 											<div key={ing._k} data-drag-item className="flex gap-2 items-center bg-background/40 rounded p-1 pr-2">
-												<button type="button" aria-label="Reorder ingredient" onPointerDown={(ev)=>startDrag(ev,'ing',idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
+												<button type="button" aria-label="Reorder ingredient" onPointerDown={(ev)=>ingredientDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
 													<GripVertical className="h-4 w-4" />
 												</button>
 												<Input placeholder="#" type="text" inputMode="decimal" value={ing.quantity ?? ''} onChange={e=>{
@@ -441,7 +376,7 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 									<div ref={stepListRef} className="space-y-2">
 										{steps.map((st, idx) => (
 											<div key={st._k} data-drag-item className="flex gap-2 items-start bg-background/40 rounded p-1 pr-2">
-												<button type="button" aria-label="Reorder step" onPointerDown={(ev)=>startDrag(ev,'step',idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
+												<button type="button" aria-label="Reorder step" onPointerDown={(ev)=>stepDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
 													<GripVertical className="h-4 w-4" />
 												</button>
 												<Textarea value={st.text} onChange={e=>setSteps(prev=>prev.map((p,i)=> i===idx ? { ...p, text: e.target.value } : p))} placeholder={`Step ${idx+1}`} className="min-h-16 flex-1" />
@@ -475,9 +410,6 @@ const startDrag = useCallback((e: ReactPointerEvent<HTMLButtonElement>, kind: 'i
 												autoFocus
 												value={tagValue}
 												onChange={e=>setTagValue(e.target.value)}
-												onBlur={() => {
-													setTimeout(()=>{ if (!tagValue.trim()) setAddingTag(false); }, 120);
-												}}
 												onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
 												placeholder="Add tag"
 												className="h-7 text-xs px-2 w-40"

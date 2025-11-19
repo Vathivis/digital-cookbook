@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, type StructuredIngredient } from '../lib/api';
+import { loadImageDataUrl } from '../lib/image';
+import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus } from 'lucide-react';
 import { Button } from './ui/button';
@@ -34,12 +36,34 @@ interface RecipeDetail extends RecipeSummary {
 type EditableIngredient = BaseIngredient & { _k: string };
 type EditableStep = { _k: string; text: string };
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
 const normalizeIngredients = (ingredients?: unknown): BaseIngredient[] => {
 	if (!Array.isArray(ingredients)) return [];
-	return ingredients.map((item) => {
-		if (typeof item === 'string') return { line: item };
-		return item as BaseIngredient;
-	});
+	return ingredients
+		.map<BaseIngredient | null>((item) => {
+			if (typeof item === 'string') return { line: item };
+			if (!isRecord(item)) return null;
+			const normalized: BaseIngredient = {};
+			if (typeof item.line === 'string') normalized.line = item.line;
+			else if (item.line === null) normalized.line = null;
+			if (isFiniteNumber(item.quantity)) normalized.quantity = item.quantity;
+			if (typeof item.unit === 'string') normalized.unit = item.unit;
+			else if (item.unit === null) normalized.unit = null;
+			if (typeof item.name === 'string') normalized.name = item.name;
+			else if (item.name === null) normalized.name = null;
+			if (
+				normalized.line !== undefined ||
+				normalized.name !== undefined ||
+				normalized.unit !== undefined ||
+				normalized.quantity !== undefined
+			) {
+				return normalized;
+			}
+			return null;
+		})
+		.filter((value): value is BaseIngredient => value !== null);
 };
 
 const normalizeRecipeDetail = (summary: RecipeSummary, data: Partial<RecipeDetail>): RecipeDetail => {
@@ -171,122 +195,53 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		if (top < container.scrollTop) container.scrollTop = top;
 		else if (bottom > container.scrollTop + container.clientHeight) container.scrollTop = bottom - container.clientHeight;
 	}, [highlight, tagSuggestionsNode]);
+	useEffect(() => {
+		if (!addingTag) return;
+		const handlePointerDown = (event: PointerEvent) => {
+			const node = event.target as Node;
+			if (tagBoxRef.current?.contains(node)) return;
+			if (tagSuggestionsNode?.contains(node as HTMLElement)) return;
+			setAddingTag(false);
+		};
+		document.addEventListener('pointerdown', handlePointerDown);
+		return () => document.removeEventListener('pointerdown', handlePointerDown);
+	}, [addingTag, tagSuggestionsNode]);
+	useEffect(() => {
+		if (quickLikeActive) {
+			quickLikeInputRef.current?.focus();
+		} else {
+			setQuickLikeValue('');
+		}
+	}, [quickLikeActive]);
 	const [photo, setPhoto] = useState<string | undefined>();
 	const [newLike, setNewLike] = useState('');
+	const [quickLikeActive, setQuickLikeActive] = useState(false);
+	const [quickLikeValue, setQuickLikeValue] = useState('');
+	const quickLikeInputRef = useRef<HTMLInputElement | null>(null);
 	const ingredientListRef = useRef<HTMLDivElement | null>(null);
 	const stepListRef = useRef<HTMLDivElement | null>(null);
-	const applyDetail = (detail: RecipeDetail) => {
+	const imageTaskRef = useRef(0);
+	const ingredientDrag = useReorderDrag({
+		containerRef: ingredientListRef,
+		addControlSelector: '[data-add-control="ing"]',
+		onReorder: (from, to) => setEIng((prev) => reorderArray(prev, from, to))
+	});
+	const stepDrag = useReorderDrag({
+		containerRef: stepListRef,
+		addControlSelector: '[data-add-control="step"]',
+		onReorder: (from, to) => setESteps((prev) => reorderArray(prev, from, to))
+	});
+	const applyDetail = useCallback((detail: RecipeDetail) => {
 		setFull(detail);
 		setLikes(detail.likes || []);
 		setUsesCount(detail.uses ?? 0);
 		return detail;
-	};
-	const fetchAndApplyDetail = async (fallback: RecipeSummary, id: number) => {
+	}, []);
+	const fetchAndApplyDetail = useCallback(async (fallback: RecipeSummary, id: number) => {
 		const data = await getRecipe(id);
 		const detail = normalizeRecipeDetail(fallback, data as Partial<RecipeDetail>);
 		return applyDetail(detail);
-	};
-
-	const startDrag = useCallback((e: React.PointerEvent, kind: 'ing' | 'step', index: number) => {
-		if (e.button !== 0) return;
-		e.preventDefault();
-		e.stopPropagation();
-		
-		const button = e.currentTarget as HTMLElement;
-		button.setPointerCapture(e.pointerId);
-		
-		const listEl = (kind === 'ing' ? ingredientListRef.current : stepListRef.current);
-		if (!listEl) return;
-		const list = listEl;
-		const items = Array.from(list.querySelectorAll('[data-drag-item]')) as HTMLElement[];
-		const row = items[index];
-		if (!row) return;
-		const rect = row.getBoundingClientRect();
-		const offsetY = e.clientY - rect.top;
-		const placeholder = document.createElement('div');
-		placeholder.style.height = rect.height + 'px';
-		placeholder.style.border = '2px dashed var(--border)';
-		placeholder.style.borderRadius = '0.5rem';
-		placeholder.style.background = 'var(--accent)';
-		placeholder.style.opacity = '0.25';
-		placeholder.setAttribute('data-drag-placeholder', '');
-		row.parentElement?.insertBefore(placeholder, row);
-		row.style.display = 'none';
-		const clone = row.cloneNode(true) as HTMLElement;
-		clone.style.position = 'fixed';
-		clone.style.top = rect.top + 'px';
-		clone.style.left = rect.left + 'px';
-		clone.style.width = rect.width + 'px';
-		clone.style.zIndex = '1000';
-		clone.style.pointerEvents = 'none';
-		clone.style.boxShadow = '0 4px 16px -2px rgba(0,0,0,0.35)';
-		clone.style.background = 'var(--card)';
-		clone.style.transition = 'transform 0.12s ease';
-		clone.classList.add('drag-follow');
-		document.body.appendChild(clone);
-		const startIndex = index;
-		function onMove(ev: PointerEvent) {
-			const y = ev.clientY - offsetY;
-			clone.style.top = y + 'px';
-			const centerY = y + rect.height / 2;
-			const siblings = Array.from(list.querySelectorAll('[data-drag-item]'))
-				.filter(el => el !== row) as HTMLElement[];
-			let inserted = false;
-			for (const sib of siblings) {
-				if (sib.style.display === 'none') continue;
-				const r = sib.getBoundingClientRect();
-				const mid = r.top + r.height / 2;
-				if (centerY < mid) {
-						if (sib.previousSibling !== placeholder) {
-							list.insertBefore(placeholder, sib);
-					}
-					inserted = true;
-					break;
-				}
-			}
-			if (!inserted) {
-				const addBtn = list.querySelector('[data-add-control="'+kind+'"]');
-				if (addBtn) list.insertBefore(placeholder, addBtn);
-				else list.appendChild(placeholder);
-			}
-		}
-		let finished = false;
-		const finishDrag = () => {
-			if (finished) return;
-			finished = true;
-			try {
-				button.releasePointerCapture(e.pointerId);
-			} catch {
-				// ignore release errors
-			}
-			button.removeEventListener('pointermove', onMove);
-			button.removeEventListener('pointerup', finishDrag);
-			button.removeEventListener('pointercancel', finishDrag);
-			button.removeEventListener('lostpointercapture', finishDrag);
-			document.body.style.cursor = '';
-			clone.remove();
-			row.style.display = '';
-			const children = Array.from(list.children);
-			const phIndex = children.indexOf(placeholder);
-			placeholder.remove();
-			if (phIndex === -1 || phIndex === startIndex) return;
-			const from = startIndex;
-			let to = phIndex;
-			if (to > from) to -= 1;
-			if (from === to) return;
-			if (kind === 'ing') {
-				setEIng(prev => reorderArray(prev, from, to));
-			} else {
-				setESteps(prev => reorderArray(prev, from, to));
-			}
-		};
-		
-		document.body.style.cursor = 'grabbing';
-		button.addEventListener('pointermove', onMove);
-		button.addEventListener('pointerup', finishDrag);
-		button.addEventListener('pointercancel', finishDrag);
-		button.addEventListener('lostpointercapture', finishDrag);
-	}, [setEIng, setESteps]);
+	}, [applyDetail]);
 
 	const updateUses = (value: number) => {
 		setUsesCount(value);
@@ -357,47 +312,129 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		setEditing(false);
 		onChange();
 	};
-	const addLikeInline = async () => {
-		if (!newLike.trim()) return;
-		const name = newLike.trim();
-		setLikes(l => (l.includes(name) ? l : [...l, name]));
-		setNewLike('');
-		if (full) {
+	const pushLike = useCallback((name: string) => {
+		let changed = false;
+		let snapshot: string[] | null = null;
+		setLikes((prev) => {
+			if (prev.includes(name)) {
+				snapshot = prev;
+				return prev;
+			}
+			changed = true;
+			snapshot = [...prev, name];
+			return snapshot;
+		});
+		if (changed && snapshot) {
+			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
+		}
+	}, []);
+	const pullLike = useCallback((name: string) => {
+		let changed = false;
+		let snapshot: string[] | null = null;
+		setLikes((prev) => {
+			if (!prev.includes(name)) {
+				snapshot = prev;
+				return prev;
+			}
+			changed = true;
+			snapshot = prev.filter((entry) => entry !== name);
+			return snapshot;
+		});
+		if (changed && snapshot) {
+			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
+		}
+	}, []);
+	const persistLike = useCallback(
+		async (name: string, targetId?: number) => {
+			const normalized = name.trim();
+			if (!normalized) return;
+			const target = targetId ?? (full?.id ?? recipe.id);
+			pushLike(normalized);
 			try {
-				await addLike(full.id, name);
-				await fetchAndApplyDetail(full, full.id);
+				await addLike(target, normalized);
 				onChange();
 			} catch (error) {
 				console.error('Failed to add like', error);
+				pullLike(normalized);
+				if (full) {
+					try {
+						await fetchAndApplyDetail(full, full.id);
+					} catch (detailError) {
+						console.error('Failed to refresh recipe detail', detailError);
+					}
+				}
 			}
-		}
+		},
+		[fetchAndApplyDetail, full, onChange, pullLike, pushLike, recipe.id]
+	);
+	const addLikeInline = async () => {
+		if (!full || !newLike.trim()) return;
+		const name = newLike.trim();
+		setNewLike('');
+		await persistLike(name, full.id);
 	};
 	const removeLikeInline = async (name: string) => {
 		if (!full) return;
-		await removeLike(full.id, name);
-		await fetchAndApplyDetail(full, full.id);
-		onChange();
+		pullLike(name);
+		try {
+			await removeLike(full.id, name);
+			onChange();
+		} catch (error) {
+			console.error('Failed to remove like', error);
+			pushLike(name);
+		}
+	};
+	const handleQuickLikeSubmit = async () => {
+		const name = quickLikeValue.trim();
+		if (!name) return;
+		setQuickLikeActive(false);
+		setQuickLikeValue('');
+		await persistLike(name, recipe.id);
+	};
+	const cancelQuickLike = () => {
+		setQuickLikeActive(false);
+		setQuickLikeValue('');
 	};
 	const onPickImage = (file?: File) => {
 		if (!file) return;
-		const reader = new FileReader();
-		reader.onload = () => setPhoto(reader.result as string);
-		reader.readAsDataURL(file);
+		const taskId = ++imageTaskRef.current;
+		loadImageDataUrl(file)
+			.then((dataUrl) => {
+				if (imageTaskRef.current === taskId) {
+					setPhoto(dataUrl);
+				}
+			})
+			.catch((error) => console.error('Failed to process image', error));
 	};
 	const submitTag = async (nameOverride?: string) => {
+		if (!full) return;
 		const raw = (nameOverride ?? tagValue).trim();
-		if (!full || !raw) return;
-		await addTagToRecipe(full.id, raw);
-		await fetchAndApplyDetail(full, full.id);
-		setTagValue('');
-		setAddingTag(false);
-		onChange();
+		if (!raw) return;
+		try {
+			await addTagToRecipe(full.id, raw);
+			setFull((detail) => {
+				if (!detail) return detail;
+				if (detail.tags.includes(raw)) return detail;
+				return { ...detail, tags: [...detail.tags, raw] };
+			});
+			setTagValue('');
+			setAddingTag(false);
+			onChange();
+		} catch (error) {
+			console.error('Failed to add tag', error);
+		}
 	};
 	const onRemoveTag = async (t: string) => {
 		if (!full) return;
-		await removeTagFromRecipe(full.id, t);
-		await fetchAndApplyDetail(full, full.id);
-		onChange();
+		const previousTags = [...full.tags];
+		setFull((detail) => (detail ? { ...detail, tags: detail.tags.filter((tag) => tag !== t) } : detail));
+		try {
+			await removeTagFromRecipe(full.id, t);
+			onChange();
+		} catch (error) {
+			console.error('Failed to remove tag', error);
+			setFull((detail) => (detail ? { ...detail, tags: previousTags } : detail));
+		}
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
 	useEffect(() => {
@@ -545,21 +582,56 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 					)}
 				</div>
 				<div className="flex flex-wrap gap-1">
-					<button onClick={(e) => {
-						e.stopPropagation();
-						const name = prompt('Name who likes this?');
-						(async () => {
-							if (!name) return;
-							setLikes(l => (l.includes(name) ? l : [...l, name]));
-							try {
-								await addLike(recipe.id, name);
-								await fetchAndApplyDetail(full ?? recipe, recipe.id);
-								onChange();
-							} catch (error) {
-								console.error('Failed to add like', error);
-							}
-						})();
-					}} className="text-[10px] flex items-center gap-1 text-muted-foreground hover:text-foreground"><ThumbsUp className="h-3 w-3"/> like</button>
+					{quickLikeActive ? (
+						<form
+							onSubmit={(e) => {
+								e.preventDefault();
+								handleQuickLikeSubmit();
+							}}
+							onClick={(e) => e.stopPropagation()}
+							className="flex flex-1 items-center gap-1"
+						>
+							<Input
+								ref={quickLikeInputRef}
+								value={quickLikeValue}
+								onChange={(e) => setQuickLikeValue(e.target.value)}
+								onKeyDown={(e) => {
+									if (e.key === 'Escape') {
+										e.preventDefault();
+										cancelQuickLike();
+									}
+								}}
+								placeholder="Name who likes this"
+								className="h-7 flex-1 min-w-0 text-[11px] px-2"
+							/>
+							<Button type="submit" size="sm" className="h-7 px-2 text-[11px]" disabled={!quickLikeValue.trim()}>
+								Add
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="h-7 px-2 text-[11px]"
+								onClick={(e) => {
+									e.stopPropagation();
+									cancelQuickLike();
+								}}
+							>
+								Cancel
+							</Button>
+						</form>
+					) : (
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								setQuickLikeActive(true);
+							}}
+							className="text-[10px] flex items-center gap-1 text-muted-foreground hover:text-foreground"
+						>
+							<ThumbsUp className="h-3 w-3" /> like
+						</button>
+					)}
 				</div>
 			</div>
 		</div>
@@ -659,18 +731,15 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 													{addingTag ? (
 														<div ref={tagBoxRef} className="relative">
 															<form onSubmit={(e)=>{e.preventDefault(); submitTag();}} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
-																<Input
-																	ref={inputRef}
-																	autoFocus
-																	value={tagValue}
-																	onChange={e=>setTagValue(e.target.value)}
-																	onBlur={() => {
-								setTimeout(()=>{ if (!tagValue.trim()) setAddingTag(false); }, 120);
-																	}}
-																	onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
-																	placeholder="Add tag"
-																	className="h-7 text-xs px-2 w-40"
-																/>
+								<Input
+									ref={inputRef}
+									autoFocus
+									value={tagValue}
+									onChange={e=>setTagValue(e.target.value)}
+									onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
+									placeholder="Add tag"
+									className="h-7 text-xs px-2 w-40"
+								/>
 																<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
 															</form>
 															{inputRef.current && createPortal(
@@ -734,7 +803,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															<div ref={ingredientListRef} className="space-y-2">
 																{eing.map((ing, idx) => (
 																	<div key={ing._k} data-drag-item className="flex gap-2 items-center bg-background/40 rounded p-1 pr-2">
-																		<button type="button" aria-label="Drag ingredient" onPointerDown={(ev)=>startDrag(ev,'ing',idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
+																		<button type="button" aria-label="Drag ingredient" onPointerDown={(ev)=>ingredientDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
 																			<GripVertical className="h-4 w-4" />
 																		</button>
 																		<Input aria-label="Quantity" placeholder="#" type="text" inputMode="decimal" value={ing.quantity ?? ''} onChange={e=>{
@@ -765,7 +834,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															<div ref={stepListRef} className="space-y-2">
 																{esteps.map((st, idx) => (
 																	<div key={st._k} data-drag-item className="flex gap-2 items-start bg-background/40 rounded p-1 pr-2">
-																		<button type="button" aria-label="Drag step" onPointerDown={(ev)=>startDrag(ev,'step',idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
+																		<button type="button" aria-label="Drag step" onPointerDown={(ev)=>stepDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
 																			<GripVertical className="h-4 w-4" />
 																		</button>
 																		<Textarea value={st.text} onChange={e=>setESteps(prev=>prev.map((p,i)=> i===idx ? { ...p, text: e.target.value } : p))} placeholder={`Step ${idx+1}`} className="min-h-16 flex-1" />
