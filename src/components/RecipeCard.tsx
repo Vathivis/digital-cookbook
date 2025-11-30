@@ -206,6 +206,11 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		document.addEventListener('pointerdown', handlePointerDown);
 		return () => document.removeEventListener('pointerdown', handlePointerDown);
 	}, [addingTag, tagSuggestionsNode]);
+	const [photo, setPhoto] = useState<string | undefined>();
+	const [newLike, setNewLike] = useState('');
+	const [quickLikeActive, setQuickLikeActive] = useState(false);
+	const [quickLikeValue, setQuickLikeValue] = useState('');
+	const quickLikeInputRef = useRef<HTMLInputElement | null>(null);
 	useEffect(() => {
 		if (quickLikeActive) {
 			quickLikeInputRef.current?.focus();
@@ -213,11 +218,6 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			setQuickLikeValue('');
 		}
 	}, [quickLikeActive]);
-	const [photo, setPhoto] = useState<string | undefined>();
-	const [newLike, setNewLike] = useState('');
-	const [quickLikeActive, setQuickLikeActive] = useState(false);
-	const [quickLikeValue, setQuickLikeValue] = useState('');
-	const quickLikeInputRef = useRef<HTMLInputElement | null>(null);
 	const ingredientListRef = useRef<HTMLDivElement | null>(null);
 	const stepListRef = useRef<HTMLDivElement | null>(null);
 	const imageTaskRef = useRef(0);
