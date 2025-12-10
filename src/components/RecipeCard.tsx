@@ -965,22 +965,25 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 													</div>
 													<div>
 														<h4 className="font-semibold mb-2">Likes</h4>
-														<div className="flex flex-wrap gap-2 mb-2">
+
+														<div className="flex flex-wrap gap-2 items-center">
+
 															{likes.map(name => (
-																<span key={name} style={likeStyles(name)} className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1 leading-none">
-																	{name}
-																	<button type="button" onClick={()=>removeLikeInline(name)} className="hover:text-destructive">×</button>
+
+																<span key={name} style={likeStyles(name)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
+
+																	<span>{name}</span>
+
+																	<button type="button" aria-label={`Remove like ${name}`} onClick={()=>removeLikeInline(name)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+
+																		<XIcon className="h-3.5 w-3.5" />
+
+																	</button>
+
 																</span>
+
 															))}
-														</div>
-													<div className="flex flex-wrap gap-2 items-center">
-															{likes.map(name => (
-																<span key={name} style={likeStyles(name)} className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1 leading-none">
-																	{name}
-																	<button type="button" onClick={()=>removeLikeInline(name)} className="hover:text-destructive">x</button>
-																</span>
-															))}
-															{addingLike ? (
+{addingLike ? (
 																<form
 																	onSubmit={(e)=>{e.preventDefault(); addLikeInline();}}
 																	className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background"
