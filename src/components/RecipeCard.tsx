@@ -412,7 +412,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		setQuickLikeActive(false);
 		setQuickLikeValue('');
 	};
-	const onPickImage = (file?: File) => {
+	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const taskId = ++imageTaskRef.current;
 		loadImageDataUrl(file)
@@ -422,7 +422,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
-	};
+	}, []);
 
 	useEffect(() => {
 		if (!open || !editing) return;
@@ -817,12 +817,7 @@ const scrollRef = useRef<HTMLDivElement | null>(null);
 					{!editing && (
 												<div className="mt-4 flex flex-wrap gap-2 items-center">
 													{(full?.tags ?? recipe.tags ?? []).map((t: string) => (
-														<span key={t} style={tagStyles(t)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
-															<span>{t}</span>
-															<button aria-label={`Remove tag ${t}`} onClick={() => onRemoveTag(t)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-																<XIcon className="h-3.5 w-3.5" />
-															</button>
-														</span>
+														<span key={t} style={tagStyles(t)} className="text-[11px] h-7 px-3 rounded-full border inline-flex items-center gap-1.5 leading-none">{t}</span>
 													))}
 													{addingTag ? (
 														<div ref={tagBoxRef} className="relative">
@@ -853,7 +848,7 @@ const scrollRef = useRef<HTMLDivElement | null>(null);
 															)}
 														</div>
 													) : (
-														<button onClick={()=>setAddingTag(true)} className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40">+ tag</button>
+														<button onClick={()=>setAddingTag(true)} className="text-xs h-7 border border-dashed border-slate-400 rounded-full px-3 text-muted-foreground hover:bg-accent/40">+ tag</button>
 													)}
 												</div>
 											)}
@@ -1128,5 +1123,3 @@ function reorderArray<T>(arr: T[], from: number, to: number): T[] {
 	copy.splice(to, 0, item);
 	return copy;
 }
-
-
