@@ -32,12 +32,15 @@ POST /api/recipes (create)
 PATCH /api/recipes/:id (partial update; replaces ingredient/step/note sets when provided)
 
 POST /api/recipes/:id/increment-uses (usage counter)
+POST /api/recipes/:id/decrement-uses (usage counter)
 
 POST /api/recipes/:id/tags { name } / DELETE /api/recipes/:id/tags/:name
 
 POST /api/recipes/:id/likes { name } / DELETE /api/recipes/:id/likes/:name
 
 DELETE /api/recipes/:id
+
+GET /api/tags (list all tags alphabetically)
 
 Patterns:
 - Tag & like insertion use INSERT OR IGNORE then re-fetch.

@@ -4,7 +4,7 @@ import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, 
 import { loadImageDataUrl } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
-import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus } from 'lucide-react';
+import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus, ImagePlus } from 'lucide-react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
@@ -38,6 +38,18 @@ type EditableStep = { _k: string; text: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const normalizeName = (value: string) => value.trim().toLowerCase();
+const uniqNames = (list: string[]) => {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const name of list) {
+		const key = normalizeName(name);
+		if (!key || seen.has(key)) continue;
+		seen.add(key);
+		result.push(name.trim());
+	}
+	return result;
+};
 
 const normalizeIngredients = (ingredients?: unknown): BaseIngredient[] => {
 	if (!Array.isArray(ingredients)) return [];
@@ -74,7 +86,7 @@ const normalizeRecipeDetail = (summary: RecipeSummary, data: Partial<RecipeDetai
 		uses: data.uses ?? summary.uses ?? 0,
 		servings: data.servings ?? summary.servings ?? 1,
 		tags: data.tags ?? summary.tags ?? [],
-		likes: data.likes ?? summary.likes ?? [],
+		likes: uniqNames(data.likes ?? summary.likes ?? []),
 		ingredients: normalizeIngredients(data.ingredients),
 		steps: Array.isArray(data.steps) ? data.steps : [],
 		notes: data.notes ?? ''
@@ -99,7 +111,7 @@ interface RecipeCardProps {
 }
 
 export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
-	const [likes, setLikes] = useState<string[]>(recipe.likes || []);
+	const [likes, setLikes] = useState<string[]>(uniqNames(recipe.likes || []));
 	const [usesCount, setUsesCount] = useState<number>(recipe.uses ?? 0);
 	const [open, setOpen] = useState(false);
 	const [full, setFull] = useState<RecipeDetail | null>(null);
@@ -124,7 +136,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		setUsesCount(recipe.uses ?? 0);
 	}, [recipe.uses]);
 	useEffect(() => {
-		setLikes(recipe.likes ?? []);
+		setLikes(uniqNames(recipe.likes ?? []));
 	}, [recipe.likes]);
 	useEffect(() => {
 		if (!open) {
@@ -207,9 +219,13 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		return () => document.removeEventListener('pointerdown', handlePointerDown);
 	}, [addingTag, tagSuggestionsNode]);
 	const [photo, setPhoto] = useState<string | undefined>();
-	const [newLike, setNewLike] = useState('');
+	const [photoDrag, setPhotoDrag] = useState(false);
+	const photoInputRef = useRef<HTMLInputElement | null>(null);
 	const [quickLikeActive, setQuickLikeActive] = useState(false);
 	const [quickLikeValue, setQuickLikeValue] = useState('');
+	const [addingLike, setAddingLike] = useState(false);
+	const [likeValue, setLikeValue] = useState('');
+	const likeInputRef = useRef<HTMLInputElement | null>(null);
 	const quickLikeInputRef = useRef<HTMLInputElement | null>(null);
 	useEffect(() => {
 		if (quickLikeActive) {
@@ -233,7 +249,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	});
 	const applyDetail = useCallback((detail: RecipeDetail) => {
 		setFull(detail);
-		setLikes(detail.likes || []);
+		setLikes(uniqNames(detail.likes || []));
 		setUsesCount(detail.uses ?? 0);
 		return detail;
 	}, []);
@@ -316,7 +332,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		let changed = false;
 		let snapshot: string[] | null = null;
 		setLikes((prev) => {
-			if (prev.includes(name)) {
+			if (prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
 				snapshot = prev;
 				return prev;
 			}
@@ -327,17 +343,18 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		if (changed && snapshot) {
 			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
 		}
+		return changed;
 	}, []);
 	const pullLike = useCallback((name: string) => {
 		let changed = false;
 		let snapshot: string[] | null = null;
 		setLikes((prev) => {
-			if (!prev.includes(name)) {
+			if (!prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
 				snapshot = prev;
 				return prev;
 			}
 			changed = true;
-			snapshot = prev.filter((entry) => entry !== name);
+			snapshot = prev.filter((entry) => normalizeName(entry) !== normalizeName(name));
 			return snapshot;
 		});
 		if (changed && snapshot) {
@@ -349,7 +366,8 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			const normalized = name.trim();
 			if (!normalized) return;
 			const target = targetId ?? (full?.id ?? recipe.id);
-			pushLike(normalized);
+			const added = pushLike(normalized);
+			if (!added) return;
 			try {
 				await addLike(target, normalized);
 				onChange();
@@ -368,9 +386,10 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		[fetchAndApplyDetail, full, onChange, pullLike, pushLike, recipe.id]
 	);
 	const addLikeInline = async () => {
-		if (!full || !newLike.trim()) return;
-		const name = newLike.trim();
-		setNewLike('');
+		if (!full || !likeValue.trim()) return;
+		const name = likeValue.trim();
+		setLikeValue('');
+		setAddingLike(false);
 		await persistLike(name, full.id);
 	};
 	const removeLikeInline = async (name: string) => {
@@ -395,7 +414,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		setQuickLikeActive(false);
 		setQuickLikeValue('');
 	};
-	const onPickImage = (file?: File) => {
+	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const taskId = ++imageTaskRef.current;
 		loadImageDataUrl(file)
@@ -405,7 +424,35 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
-	};
+	}, []);
+
+	useEffect(() => {
+		if (!open || !editing) return;
+		const handlePaste = (event: ClipboardEvent) => {
+			const { files, items } = event.clipboardData || {};
+			const file = files?.[0];
+			if (file && file.type.startsWith('image/')) {
+				event.preventDefault();
+				onPickImage(file);
+				return;
+			}
+			if (items?.length) {
+				for (let i = 0; i < items.length; i++) {
+					const item = items[i];
+					if (item && item.type.startsWith('image/')) {
+						const f = item.getAsFile();
+						if (f) {
+							event.preventDefault();
+							onPickImage(f);
+							return;
+						}
+					}
+				}
+			}
+		};
+		window.addEventListener('paste', handlePaste);
+		return () => window.removeEventListener('paste', handlePaste);
+	}, [open, editing, onPickImage]);
 	const submitTag = async (nameOverride?: string) => {
 		if (!full) return;
 		const raw = (nameOverride ?? tagValue).trim();
@@ -437,6 +484,62 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		}
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
+const scrollRef = useRef<HTMLDivElement | null>(null);
+	const [hasOverflow, setHasOverflow] = useState(false);
+	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({
+		top: false,
+		bottom: false,
+	});
+
+	const updateScrollFade = useCallback((target?: HTMLDivElement | null) => {
+		const el = target ?? scrollRef.current;
+		if (!el) return;
+
+		const maxScroll = el.scrollHeight - el.clientHeight;
+		const overflow = maxScroll > 2;
+		const epsilon = 1.5;
+
+		const atTop = el.scrollTop <= epsilon;
+		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - epsilon;
+
+		setHasOverflow(overflow);
+		setScrollFade({
+			top: overflow && !atTop,
+			bottom: overflow && !atBottom,
+		});
+	}, []);
+
+	// Initial measurement and whenever content structure changes
+	useEffect(() => {
+		if (!open) {
+			setHasOverflow(false);
+			setScrollFade({ top: false, bottom: false });
+			return;
+		}
+		updateScrollFade();
+	}, [
+		open,
+		editing,
+		eing.length,
+		esteps.length,
+		enotes,
+		likes.length,
+		full?.tags?.length,
+		updateScrollFade,
+	]);
+
+	// Recalculate fades when viewport size changes
+	useEffect(() => {
+		if (!open) return;
+
+		const handler = () => updateScrollFade();
+		window.addEventListener('resize', handler);
+
+		return () => {
+			window.removeEventListener('resize', handler);
+		};
+	}, [open, updateScrollFade]);
+
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const el = document.documentElement;
@@ -461,21 +564,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			color: textColor,
 		} as React.CSSProperties;
 	}, [darkMode]);
-	const likeStyles = useCallback((n: string) => {
-		let hash = 0;
-		for (let i = 0; i < n.length; i++) hash = (hash * 31 + n.charCodeAt(i)) | 0;
-		const hue = Math.abs(hash) % 360;
-		const dark = darkMode;
-		const sat = 65;
-		const bgLightness = dark ? 36 : 74;
-		const borderLightness = dark ? bgLightness + 8 : bgLightness - 14;
-		const textColor = dark ? '#fff' : '#111';
-		return {
-			backgroundColor: `hsl(${hue},${sat}%,${bgLightness}%)`,
-			borderColor: `hsl(${hue},${sat}%,${borderLightness}%)`,
-			color: textColor,
-		} as React.CSSProperties;
-	}, [darkMode]);
+	const likeStyles = useCallback((n: string) => tagStyles(n), [tagStyles]);
 	const tagContainerRef = useRef<HTMLDivElement | null>(null);
 	const [tagClamp, setTagClamp] = useState<{ visible: string[]; hidden: number }>({ visible: recipe.tags || [], hidden: 0 });
 	useLayoutEffect(() => {
@@ -637,15 +726,24 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		</div>
 
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent className="sm:max-w-3xl">
+				<DialogContent className="sm:max-w-3xl p-4 sm:p-5">
 					<DialogHeader>
 						<DialogTitle>{editing ? 'Edit Recipe' : (full?.title ?? recipe.title)}</DialogTitle>
 					</DialogHeader>
-					<div className="max-h-[70vh] overflow-auto">
+					<div
+						ref={scrollRef}
+						onScroll={e => updateScrollFade(e.currentTarget)}
+						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
+					>
 					{!editing && (
 										<div className="relative">
 											{full?.photo ? (
-												<img src={full.photo} alt={full.title} className="w-full max-h-80 object-cover rounded" />
+												<img
+													src={full.photo}
+													alt={full.title}
+													className="w-full max-h-80 object-cover rounded"
+													onLoad={() => updateScrollFade()}
+												/>
 											) : (
 												<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
 											)}
@@ -721,12 +819,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 					{!editing && (
 												<div className="mt-4 flex flex-wrap gap-2 items-center">
 													{(full?.tags ?? recipe.tags ?? []).map((t: string) => (
-														<span key={t} style={tagStyles(t)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
-															<span>{t}</span>
-															<button aria-label={`Remove tag ${t}`} onClick={() => onRemoveTag(t)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-																<XIcon className="h-3.5 w-3.5" />
-															</button>
-														</span>
+														<span key={t} style={tagStyles(t)} className="text-[11px] h-7 px-3 rounded-full border inline-flex items-center gap-1.5 leading-none">{t}</span>
 													))}
 													{addingTag ? (
 														<div ref={tagBoxRef} className="relative">
@@ -757,33 +850,66 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															)}
 														</div>
 													) : (
-														<button onClick={()=>setAddingTag(true)} className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40">+ tag</button>
+														<button onClick={()=>setAddingTag(true)} className="text-xs h-7 border border-dashed border-slate-400 rounded-full px-3 text-muted-foreground hover:bg-accent/40">+ tag</button>
 													)}
 												</div>
 											)}
 						
 									{editing && (
 												<div className="space-y-4">
-											<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
-												<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
-												<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
-													<Minus className="h-4 w-4" />
-												</Button>
-												<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
-												<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
-													<Plus className="h-4 w-4" />
-												</Button>
-											</div>
-													<div className="flex items-center gap-2">
-														<input id={`photo-replace-${recipe.id}`} type="file" accept="image/*" className="sr-only" onChange={e=>onPickImage(e.target.files?.[0] || undefined)} />
-														<Button type="button" variant="outline" onClick={()=>document.getElementById(`photo-replace-${recipe.id}`)?.click()}>Replace Photo</Button>
-														{(photo || full?.photo) && <span className="text-xs text-muted-foreground">{photo ? 'New image selected' : 'Current image used'}</span>}
+													<div className="flex gap-4 items-start flex-wrap">
+														<div className="flex flex-col gap-2">
+															<input
+																ref={photoInputRef}
+																type="file"
+																accept="image/*"
+																className="hidden"
+																onChange={e=>{
+																	onPickImage(e.target.files?.[0] || undefined);
+																	e.target.value = '';
+																}}
+															/>
+															<button
+																type="button"
+																aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
+																onClick={()=>photoInputRef.current?.click()}
+																className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag?'ring-2 ring-primary/60':''}`}
+																onDragOver={e=>{e.preventDefault(); setPhotoDrag(true);}}
+																onDragEnter={e=>{e.preventDefault(); setPhotoDrag(true);}}
+																onDragLeave={()=>setPhotoDrag(false)}
+																onDrop={e=>{
+																	e.preventDefault();
+																	setPhotoDrag(false);
+																	const file = e.dataTransfer.files?.[0];
+																	if (file) onPickImage(file);
+																}}
+															>
+																{(photo || full?.photo) ? (
+																	<>
+																		<img
+																			src={photo || full?.photo || ''}
+																			alt="Recipe photo preview"
+																			className="object-cover w-full h-full"
+																			onLoad={() => updateScrollFade()}
+																		/>
+																		<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
+																			<ImagePlus className="h-4 w-4" />
+																		</div>
+																	</>
+															) : (
+																<div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-muted-foreground">
+																	<ImagePlus className="h-6 w-6" />
+																	<span>Click, paste (Ctrl+V), or drop an image</span>
+																</div>
+															)}
+														</button>
 													</div>
-													<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+													<div className="flex-1 min-w-[16rem] flex flex-col gap-2">
 														<Input value={etitle} onChange={e=>setETitle(e.target.value)} placeholder="Title" className="font-semibold" />
 														<Input value={eauthor} onChange={e=>setEAuthor(e.target.value)} placeholder="Author" />
+														<Textarea value={edesc} onChange={e=>setEDesc(e.target.value)} placeholder="Short description" className="h-20 md:h-24" />
+														</div>
 													</div>
-													<Textarea value={edesc} onChange={e=>setEDesc(e.target.value)} placeholder="Short description" className="h-24" />
 													<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 														<div>
 															<div className="flex items-center justify-between mb-2">
@@ -849,25 +975,118 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 														<h4 className="font-semibold mb-2">Notes</h4>
 														<Textarea value={enotes} onChange={e=>setENotes(e.target.value)} className="min-h-24" />
 													</div>
+													<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
+														<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
+														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
+															<Minus className="h-4 w-4" />
+														</Button>
+														<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
+														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
+															<Plus className="h-4 w-4" />
+														</Button>
+													</div>
 													<div>
-														<h4 className="font-semibold mb-2">Likes</h4>
-														<div className="flex flex-wrap gap-2 mb-2">
-															{likes.map(name => (
-																<span key={name} style={likeStyles(name)} className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1 leading-none">
-																	{name}
-																	<button type="button" onClick={()=>removeLikeInline(name)} className="hover:text-destructive">×</button>
+														<h4 className="font-semibold mb-2">Tags</h4>
+														<div className="flex flex-wrap gap-2 items-center">
+															{(full?.tags ?? []).map(t => (
+																<span key={t} style={tagStyles(t)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
+																	<span>{t}</span>
+																	<button type="button" aria-label={`Remove tag ${t}`} onClick={()=>onRemoveTag(t)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+																		<XIcon className="h-3.5 w-3.5" />
+																	</button>
 																</span>
 															))}
-														</div>
-														<div className="flex gap-2">
-															<Input value={newLike} onChange={e=>setNewLike(e.target.value)} onKeyDown={e=>{ if (e.key==='Enter'){ e.preventDefault(); addLikeInline(); } }} placeholder="Name who likes this" className="h-8" />
-															<Button type="button" size="sm" onClick={addLikeInline} disabled={!newLike.trim()}>Add</Button>
+															{addingTag ? (
+																<div ref={tagBoxRef} className="relative">
+																	<form onSubmit={(e)=>{e.preventDefault(); submitTag();}} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
+									<Input
+										ref={inputRef}
+										autoFocus
+										value={tagValue}
+										onChange={e=>setTagValue(e.target.value)}
+										onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
+										placeholder="Add tag"
+										className="h-7 text-xs px-2 w-40"
+									/>
+																		<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
+																	</form>
+																	{inputRef.current && createPortal(
+																		<TagSuggestions
+																			anchor={inputRef.current}
+																			items={filteredTags}
+																			highlight={highlight}
+																			onHighlight={setHighlight}
+																			existing={(full?.tags)||[]}
+																			onPick={(t)=> submitTag(t)}
+																			query={tagValue.trim()}
+																			allTags={allTags}
+																			onContainerChange={setTagSuggestionsNode}
+																		/>, document.body
+																	)}
+																</div>
+															) : (
+																<button type="button" onClick={()=>setAddingTag(true)} className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer">
+																	+ tag
+																</button>
+															)}
 														</div>
 													</div>
-												</div>
-											)}
-						
-										<div className="mt-4 flex gap-2">
+													<div>
+														<h4 className="font-semibold mb-2">Likes</h4>
+
+														<div className="flex flex-wrap gap-2 items-center">
+
+															{likes.map(name => (
+
+																<span key={name} style={likeStyles(name)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
+
+																	<span>{name}</span>
+
+																	<button type="button" aria-label={`Remove like ${name}`} onClick={()=>removeLikeInline(name)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+
+																		<XIcon className="h-3.5 w-3.5" />
+
+																	</button>
+
+																</span>
+
+															))}
+{addingLike ? (
+																<form
+																	onSubmit={(e)=>{e.preventDefault(); addLikeInline();}}
+																	className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background"
+																>
+																	<Input
+																		ref={likeInputRef}
+																		autoFocus
+																		value={likeValue}
+																		onChange={e=>setLikeValue(e.target.value)}
+																		onKeyDown={e=>{
+																			if (e.key === 'Escape') {
+																				setLikeValue('');
+																				setAddingLike(false);
+																			}
+																		}}
+																		placeholder="Name who likes this"
+																		className="h-7 text-xs px-2 w-44"
+																	/>
+																	<Button type="submit" className="h-7 px-3 text-xs" disabled={!likeValue.trim()}>Add</Button>
+																</form>
+															) : (
+																<button
+																	type="button"
+																	onClick={()=>{ setAddingLike(true); setTimeout(()=>likeInputRef.current?.focus(), 0); }}
+																	className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer"
+																>
+																	+ like
+																</button>
+															)}
+														</div>
+													</div>
+													</div>
+												)}
+										
+										<div className="mt-4 flex gap-2 pr-2">
 												{!editing ? (
 													<>
 														<Button onClick={startEdit}>Edit</Button>
@@ -906,5 +1125,3 @@ function reorderArray<T>(arr: T[], from: number, to: number): T[] {
 	copy.splice(to, 0, item);
 	return copy;
 }
-
-
