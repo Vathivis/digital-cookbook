@@ -343,6 +343,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		if (changed && snapshot) {
 			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
 		}
+		return changed;
 	}, []);
 	const pullLike = useCallback((name: string) => {
 		let changed = false;
@@ -365,7 +366,8 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			const normalized = name.trim();
 			if (!normalized) return;
 			const target = targetId ?? (full?.id ?? recipe.id);
-			pushLike(normalized);
+			const added = pushLike(normalized);
+			if (!added) return;
 			try {
 				await addLike(target, normalized);
 				onChange();
