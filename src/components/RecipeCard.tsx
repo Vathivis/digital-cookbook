@@ -483,19 +483,21 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const [hasOverflow, setHasOverflow] = useState(false);
 	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
 	const updateScrollFade = useCallback(() => {
 		const el = scrollRef.current;
 		if (!el) return;
 		const maxScroll = el.scrollHeight - el.clientHeight;
-		const hasOverflow = maxScroll > 2;
+		const overflow = maxScroll > 2;
 		const epsilon = 1.5;
 		const atTop = el.scrollTop <= epsilon;
 		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - epsilon;
-		setScrollFade({ top: hasOverflow && !atTop, bottom: hasOverflow && !atBottom });
+		setHasOverflow((prev) => (prev === overflow ? prev : overflow));
+		setScrollFade({ top: overflow && !atTop, bottom: overflow && !atBottom });
 	}, []);
 	useEffect(() => {
-		if (!open) { setScrollFade({ top: false, bottom: false }); return; }
+		if (!open) { setHasOverflow(false); setScrollFade({ top: false, bottom: false }); return; }
 		const el = scrollRef.current;
 		if (!el) return;
 		const handler = () => updateScrollFade();
@@ -703,7 +705,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 					</DialogHeader>
 					<div
 						ref={scrollRef}
-						className={`max-h-[70vh] overflow-auto thin-scrollbar fade-scroll pr-2 ${scrollFade.top ? 'fade-top' : ''} ${scrollFade.bottom ? 'fade-bottom' : ''}`}
+						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
 					>
 					{!editing && (
 										<div className="relative">
