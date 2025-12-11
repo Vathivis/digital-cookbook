@@ -196,11 +196,13 @@
 }
 .fade-scroll::after {
 	bottom: 0;
-	margin-top: -16px;
+	height: 18px;
+	margin-top: -18px;
+	transform: translateY(1px);
 	background: linear-gradient(
 		to top,
-		color-mix(in oklab, var(--color-background) 96%, transparent) 0%,
-		color-mix(in oklab, var(--color-background) 75%, transparent) 55%,
+		var(--color-background) 0%,
+		color-mix(in oklab, var(--color-background) 90%, transparent) 40%,
 		transparent 100%
 	);
 }
