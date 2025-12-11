@@ -488,10 +488,10 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		const el = scrollRef.current;
 		if (!el) return;
 		const maxScroll = el.scrollHeight - el.clientHeight;
-		const hasOverflow = maxScroll > 1;
-		const threshold = 2;
-		const atTop = el.scrollTop <= threshold;
-		const atBottom = maxScroll - el.scrollTop <= threshold;
+		const hasOverflow = maxScroll > 2;
+		const epsilon = 1.5;
+		const atTop = el.scrollTop <= epsilon;
+		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - epsilon;
 		setScrollFade({ top: hasOverflow && !atTop, bottom: hasOverflow && !atBottom });
 	}, []);
 	useEffect(() => {

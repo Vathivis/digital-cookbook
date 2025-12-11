@@ -187,23 +187,20 @@
 .fade-scroll::before {
 	top: 0;
 	margin-bottom: -16px;
-	transform: translateY(-1px);
 	background: linear-gradient(
 		to bottom,
-		var(--color-background) 0%,
-		color-mix(in oklab, var(--color-background) 80%, transparent) 45%,
+		color-mix(in oklab, var(--color-background) 96%, transparent) 0%,
+		color-mix(in oklab, var(--color-background) 75%, transparent) 55%,
 		transparent 100%
 	);
 }
 .fade-scroll::after {
 	bottom: 0;
-	height: 16px;
 	margin-top: -16px;
-	transform: translateY(1px);
 	background: linear-gradient(
 		to top,
-		var(--color-background) 0%,
-		color-mix(in oklab, var(--color-background) 80%, transparent) 45%,
+		color-mix(in oklab, var(--color-background) 96%, transparent) 0%,
+		color-mix(in oklab, var(--color-background) 75%, transparent) 55%,
 		transparent 100%
 	);
 }
