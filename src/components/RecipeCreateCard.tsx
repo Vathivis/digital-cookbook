@@ -54,6 +54,35 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const tagBoxRef = useRef<HTMLDivElement | null>(null);
 	const tagInputRef = useRef<HTMLInputElement | null>(null);
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
+	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
+	const updateScrollFade = useCallback(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const maxScroll = el.scrollHeight - el.clientHeight;
+		const hasOverflow = maxScroll > 1;
+		const threshold = 2;
+		const atTop = el.scrollTop <= threshold;
+		const atBottom = maxScroll - el.scrollTop <= threshold;
+		setScrollFade({ top: hasOverflow && !atTop, bottom: hasOverflow && !atBottom });
+	}, []);
+	useEffect(() => {
+		if (!open) { setScrollFade({ top: false, bottom: false }); return; }
+		const el = scrollRef.current;
+		if (!el) return;
+		const handler = () => updateScrollFade();
+		handler();
+		el.addEventListener('scroll', handler);
+		window.addEventListener('resize', handler);
+		return () => {
+			el.removeEventListener('scroll', handler);
+			window.removeEventListener('resize', handler);
+		};
+	}, [open, updateScrollFade]);
+	useEffect(() => {
+		if (!open) return;
+		updateScrollFade();
+	}, [open, ingredients.length, steps.length, notes, tagList.length, updateScrollFade]);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const root = document.documentElement;
@@ -275,11 +304,14 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 				</div>
 			</button>
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent className="sm:max-w-3xl">
+				<DialogContent className="sm:max-w-3xl p-4 sm:p-5">
 					<DialogHeader>
 						<DialogTitle>New Recipe</DialogTitle>
 					</DialogHeader>
-					<div className="max-h-[70vh] overflow-auto">
+					<div
+						ref={scrollRef}
+						className={`max-h-[70vh] overflow-auto thin-scrollbar fade-scroll pr-2 ${scrollFade.top ? 'fade-top' : ''} ${scrollFade.bottom ? 'fade-bottom' : ''}`}
+					>
 						<div className="flex gap-4">
 							<input
 								ref={photoInputRef}
@@ -437,7 +469,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 								)}
 							</div>
 						</div>
-						<div className="mt-4 flex items-center gap-4">
+						<div className="mt-4 flex items-center gap-4 pr-2">
 							<Button onClick={submit}>Save Recipe</Button>
 							<Button variant="outline" onClick={()=>{ resetForm(); setOpen(false); }}>Cancel</Button>
 						</div>

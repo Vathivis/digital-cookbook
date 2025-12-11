@@ -482,6 +482,35 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		}
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
+	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
+	const updateScrollFade = useCallback(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const maxScroll = el.scrollHeight - el.clientHeight;
+		const hasOverflow = maxScroll > 1;
+		const threshold = 2;
+		const atTop = el.scrollTop <= threshold;
+		const atBottom = maxScroll - el.scrollTop <= threshold;
+		setScrollFade({ top: hasOverflow && !atTop, bottom: hasOverflow && !atBottom });
+	}, []);
+	useEffect(() => {
+		if (!open) { setScrollFade({ top: false, bottom: false }); return; }
+		const el = scrollRef.current;
+		if (!el) return;
+		const handler = () => updateScrollFade();
+		handler();
+		el.addEventListener('scroll', handler);
+		window.addEventListener('resize', handler);
+		return () => {
+			el.removeEventListener('scroll', handler);
+			window.removeEventListener('resize', handler);
+		};
+	}, [open, updateScrollFade]);
+	useEffect(() => {
+		if (!open) return;
+		updateScrollFade();
+	}, [open, editing, eing.length, esteps.length, enotes, likes.length, full?.tags?.length, updateScrollFade]);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const el = document.documentElement;
@@ -668,11 +697,14 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		</div>
 
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent className="sm:max-w-3xl">
+				<DialogContent className="sm:max-w-3xl p-4 sm:p-5">
 					<DialogHeader>
 						<DialogTitle>{editing ? 'Edit Recipe' : (full?.title ?? recipe.title)}</DialogTitle>
 					</DialogHeader>
-					<div className="max-h-[70vh] overflow-auto">
+					<div
+						ref={scrollRef}
+						className={`max-h-[70vh] overflow-auto thin-scrollbar fade-scroll pr-2 ${scrollFade.top ? 'fade-top' : ''} ${scrollFade.bottom ? 'fade-bottom' : ''}`}
+					>
 					{!editing && (
 										<div className="relative">
 											{full?.photo ? (
@@ -795,49 +827,40 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 						
 									{editing && (
 												<div className="space-y-4">
-											<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
-												<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
-												<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
-													<Minus className="h-4 w-4" />
-												</Button>
-												<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
-												<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
-													<Plus className="h-4 w-4" />
-												</Button>
-											</div>
 													<div className="flex gap-4 items-start flex-wrap">
-														<input
-															ref={photoInputRef}
-															type="file"
-															accept="image/*"
-															className="hidden"
-															onChange={e=>{
-																onPickImage(e.target.files?.[0] || undefined);
-																e.target.value = '';
-															}}
-														/>
-														<button
-															type="button"
-															aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
-															onClick={()=>photoInputRef.current?.click()}
-															className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag?'ring-2 ring-primary/60':''}`}
-															onDragOver={e=>{e.preventDefault(); setPhotoDrag(true);}}
-															onDragEnter={e=>{e.preventDefault(); setPhotoDrag(true);}}
-															onDragLeave={()=>setPhotoDrag(false)}
-															onDrop={e=>{
-																e.preventDefault();
-																setPhotoDrag(false);
-																const file = e.dataTransfer.files?.[0];
-																if (file) onPickImage(file);
-															}}
-														>
-															{(photo || full?.photo) ? (
-																<>
-																	<img src={photo || full?.photo || ''} alt="Recipe photo preview" className="object-cover w-full h-full" />
-																	<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
-																		<ImagePlus className="h-4 w-4" />
-																	</div>
-																</>
+														<div className="flex flex-col gap-2">
+															<input
+																ref={photoInputRef}
+																type="file"
+																accept="image/*"
+																className="hidden"
+																onChange={e=>{
+																	onPickImage(e.target.files?.[0] || undefined);
+																	e.target.value = '';
+																}}
+															/>
+															<button
+																type="button"
+																aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
+																onClick={()=>photoInputRef.current?.click()}
+																className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag?'ring-2 ring-primary/60':''}`}
+																onDragOver={e=>{e.preventDefault(); setPhotoDrag(true);}}
+																onDragEnter={e=>{e.preventDefault(); setPhotoDrag(true);}}
+																onDragLeave={()=>setPhotoDrag(false)}
+																onDrop={e=>{
+																	e.preventDefault();
+																	setPhotoDrag(false);
+																	const file = e.dataTransfer.files?.[0];
+																	if (file) onPickImage(file);
+																}}
+															>
+																{(photo || full?.photo) ? (
+																	<>
+																		<img src={photo || full?.photo || ''} alt="Recipe photo preview" className="object-cover w-full h-full" />
+																		<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
+																			<ImagePlus className="h-4 w-4" />
+																		</div>
+																	</>
 															) : (
 																<div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-muted-foreground">
 																	<ImagePlus className="h-6 w-6" />
@@ -845,13 +868,13 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 																</div>
 															)}
 														</button>
-														{(photo || full?.photo) && <span className="text-xs text-muted-foreground mt-2">{photo ? 'New image selected' : 'Current image used'}</span>}
 													</div>
-													<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+													<div className="flex-1 min-w-[16rem] flex flex-col gap-2">
 														<Input value={etitle} onChange={e=>setETitle(e.target.value)} placeholder="Title" className="font-semibold" />
 														<Input value={eauthor} onChange={e=>setEAuthor(e.target.value)} placeholder="Author" />
+														<Textarea value={edesc} onChange={e=>setEDesc(e.target.value)} placeholder="Short description" className="h-20 md:h-24" />
+														</div>
 													</div>
-													<Textarea value={edesc} onChange={e=>setEDesc(e.target.value)} placeholder="Short description" className="h-24" />
 													<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 														<div>
 															<div className="flex items-center justify-between mb-2">
@@ -916,6 +939,16 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 													<div>
 														<h4 className="font-semibold mb-2">Notes</h4>
 														<Textarea value={enotes} onChange={e=>setENotes(e.target.value)} className="min-h-24" />
+													</div>
+													<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
+														<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
+														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
+															<Minus className="h-4 w-4" />
+														</Button>
+														<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
+														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
+															<Plus className="h-4 w-4" />
+														</Button>
 													</div>
 													<div>
 														<h4 className="font-semibold mb-2">Tags</h4>
@@ -1015,10 +1048,10 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															)}
 														</div>
 													</div>
-												</div>
-											)}
-						
-										<div className="mt-4 flex gap-2">
+													</div>
+												)}
+										
+										<div className="mt-4 flex gap-2 pr-2">
 												{!editing ? (
 													<>
 														<Button onClick={startEdit}>Edit</Button>
