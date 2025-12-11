@@ -482,37 +482,62 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		}
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
-	const scrollRef = useRef<HTMLDivElement | null>(null);
+const scrollRef = useRef<HTMLDivElement | null>(null);
 	const [hasOverflow, setHasOverflow] = useState(false);
-	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({ top: false, bottom: false });
-	const updateScrollFade = useCallback(() => {
-		const el = scrollRef.current;
+	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({
+		top: false,
+		bottom: false,
+	});
+
+	const updateScrollFade = useCallback((target?: HTMLDivElement | null) => {
+		const el = target ?? scrollRef.current;
 		if (!el) return;
+
 		const maxScroll = el.scrollHeight - el.clientHeight;
 		const overflow = maxScroll > 2;
 		const epsilon = 1.5;
+
 		const atTop = el.scrollTop <= epsilon;
 		const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - epsilon;
-		setHasOverflow((prev) => (prev === overflow ? prev : overflow));
-		setScrollFade({ top: overflow && !atTop, bottom: overflow && !atBottom });
+
+		setHasOverflow(overflow);
+		setScrollFade({
+			top: overflow && !atTop,
+			bottom: overflow && !atBottom,
+		});
 	}, []);
+
+	// Initial measurement and whenever content structure changes
 	useEffect(() => {
-		if (!open) { setHasOverflow(false); setScrollFade({ top: false, bottom: false }); return; }
-		const el = scrollRef.current;
-		if (!el) return;
+		if (!open) {
+			setHasOverflow(false);
+			setScrollFade({ top: false, bottom: false });
+			return;
+		}
+		updateScrollFade();
+	}, [
+		open,
+		editing,
+		eing.length,
+		esteps.length,
+		enotes,
+		likes.length,
+		full?.tags?.length,
+		updateScrollFade,
+	]);
+
+	// Recalculate fades when viewport size changes
+	useEffect(() => {
+		if (!open) return;
+
 		const handler = () => updateScrollFade();
-		handler();
-		el.addEventListener('scroll', handler);
 		window.addEventListener('resize', handler);
+
 		return () => {
-			el.removeEventListener('scroll', handler);
 			window.removeEventListener('resize', handler);
 		};
 	}, [open, updateScrollFade]);
-	useEffect(() => {
-		if (!open) return;
-		updateScrollFade();
-	}, [open, editing, eing.length, esteps.length, enotes, likes.length, full?.tags?.length, updateScrollFade]);
+
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const el = document.documentElement;
@@ -705,12 +730,18 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 					</DialogHeader>
 					<div
 						ref={scrollRef}
+						onScroll={e => updateScrollFade(e.currentTarget)}
 						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
 					>
 					{!editing && (
 										<div className="relative">
 											{full?.photo ? (
-												<img src={full.photo} alt={full.title} className="w-full max-h-80 object-cover rounded" />
+												<img
+													src={full.photo}
+													alt={full.title}
+													className="w-full max-h-80 object-cover rounded"
+													onLoad={() => updateScrollFade()}
+												/>
 											) : (
 												<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
 											)}
@@ -858,7 +889,12 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															>
 																{(photo || full?.photo) ? (
 																	<>
-																		<img src={photo || full?.photo || ''} alt="Recipe photo preview" className="object-cover w-full h-full" />
+																		<img
+																			src={photo || full?.photo || ''}
+																			alt="Recipe photo preview"
+																			className="object-cover w-full h-full"
+																			onLoad={() => updateScrollFade()}
+																		/>
 																		<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
 																			<ImagePlus className="h-4 w-4" />
 																		</div>
