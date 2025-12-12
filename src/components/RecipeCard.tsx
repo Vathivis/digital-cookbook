@@ -145,7 +145,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			setFilteredTags(allTags);
 			setHighlight(-1);
 		}
-	// eslint-disable-next-line react-hooks/exhaustive-deps
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open]);
 	useEffect(() => {
 		if (!addingTag) return;
@@ -178,7 +178,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				score -= Math.max(0, lt.length - q.length);
 				return { t, score };
 			})
-			.sort((a,b) => b.score - a.score)
+			.sort((a, b) => b.score - a.score)
 			.map(x => x.t)
 			.slice(0, 50);
 		setFilteredTags(scored);
@@ -316,11 +316,11 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			author: eauthor.trim(),
 			description: edesc,
 			servings: eservings,
-				ingredients: eing.map(({ _k, ...rest }) => {
-					void _k;
-					return rest;
-				}),
-				steps: esteps.map(s => s.text),
+			ingredients: eing.map(({ _k, ...rest }) => {
+				void _k;
+				return rest;
+			}),
+			steps: esteps.map(s => s.text),
 			notes: enotes,
 			photoDataUrl: photo,
 		});
@@ -484,7 +484,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		}
 	};
 	const [darkMode, setDarkMode] = useState<boolean>(() => (typeof document !== 'undefined' && document.documentElement.classList.contains('dark')));
-const scrollRef = useRef<HTMLDivElement | null>(null);
+	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const [hasOverflow, setHasOverflow] = useState(false);
 	const [scrollFade, setScrollFade] = useState<{ top: boolean; bottom: boolean }>({
 		top: false,
@@ -610,7 +610,7 @@ const scrollRef = useRef<HTMLDivElement | null>(null);
 			const lastLineChildren = children.filter(c => c.offsetTop === lastTop && c.offsetLeft < availableWidth);
 			const plusWidth = plus.offsetWidth + 4;
 			let lineWidth = lastLineChildren.reduce((acc, c) => acc + c.offsetWidth + 4, 0);
-			while (allowedLastIndex >=0 && (lineWidth + plusWidth) > availableWidth) {
+			while (allowedLastIndex >= 0 && (lineWidth + plusWidth) > availableWidth) {
 				const child = children[allowedLastIndex];
 				if (!child) break;
 				if (child.offsetTop !== lastTop) break;
@@ -625,105 +625,105 @@ const scrollRef = useRef<HTMLDivElement | null>(null);
 
 	return (
 		<>
-		<div onClick={openDialog} role="button" tabIndex={0} className="min-h-[23rem] text-left relative group rounded-lg border border-border bg-card shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-ring">
-		<div className="relative h-40 w-full flex-shrink-0 overflow-hidden">
-			{recipe.photo ? (
-				<img src={recipe.photo} alt={recipe.title} className="h-full w-full object-cover" />
-			) : (
-				<div className="h-full w-full bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
-			)}
-			{likes.length > 0 && (
-				<div className="absolute top-1.5 right-1.5 z-10 flex flex-wrap gap-1 max-w-[65%] justify-end pointer-events-none">
-					{likes.map(name => (
-						<span key={name} style={likeStyles(name)} className="pointer-events-auto text-[10px] px-2 py-0.5 rounded-full border leading-none shadow-sm">
-							{name}
-						</span>
-					))}
-				</div>
-			)}
-			<Button
-				variant="secondary"
-				type="button"
-				size="sm"
-				className="absolute bottom-1.5 right-1.5 z-10 h-8 rounded-full px-3 text-xs font-mono bg-background/90 backdrop-blur-sm border border-border/70 shadow-md flex items-center gap-1"
-				onClick={(e)=>{e.stopPropagation(); incrementCookCount();}}
-				title="Increment uses"
-			>
-				<Plus className="h-3 w-3" />
-				<span>{usesCount}</span>
-			</Button>
-		</div>
-			<div className="p-3 flex flex-col gap-2 flex-1 min-h-0">
-			<div className="flex flex-col gap-1">
-				<h3 className="font-semibold text-base leading-snug line-clamp-2 break-all pr-2">{recipe.title}</h3>
-				<p className="text-xs text-muted-foreground line-clamp-3 break-all">{recipe.description}</p>
-			</div>
-				<div ref={tagContainerRef} className="flex flex-wrap gap-1 mt-auto pt-1 overflow-hidden">
-					{tagClamp.visible.map((t: string) => (
-						<span key={t} style={tagStyles(t)} className="text-[11px] px-2.5 py-0.5 rounded-full border leading-none">
-							{t}
-						</span>
-					))}
-					{tagClamp.hidden > 0 && (
-						<span className="text-[11px] px-2.5 py-0.5 rounded-full border leading-none bg-muted/40" style={{}}>
-							+{tagClamp.hidden}
-						</span>
+			<div onClick={openDialog} role="button" tabIndex={0} className="min-h-[23rem] text-left relative group rounded-lg border border-border bg-card shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-ring">
+				<div className="relative h-40 w-full flex-shrink-0 overflow-hidden">
+					{recipe.photo ? (
+						<img src={recipe.photo} alt={recipe.title} className="h-full w-full object-cover" />
+					) : (
+						<div className="h-full w-full bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
 					)}
+					{likes.length > 0 && (
+						<div className="absolute top-1.5 right-1.5 z-10 flex flex-wrap gap-1 max-w-[65%] justify-end pointer-events-none">
+							{likes.map(name => (
+								<span key={name} style={likeStyles(name)} className="pointer-events-auto text-[10px] px-2 py-0.5 rounded-full border leading-none shadow-sm">
+									{name}
+								</span>
+							))}
+						</div>
+					)}
+					<Button
+						variant="secondary"
+						type="button"
+						size="sm"
+						className="absolute bottom-1.5 right-1.5 z-10 h-8 rounded-full px-3 text-xs font-mono bg-background/90 backdrop-blur-sm border border-border/70 shadow-md flex items-center gap-1"
+						onClick={(e) => { e.stopPropagation(); incrementCookCount(); }}
+						title="Increment uses"
+					>
+						<Plus className="h-3 w-3" />
+						<span>{usesCount}</span>
+					</Button>
 				</div>
-				<div className="flex flex-wrap gap-1">
-					{quickLikeActive ? (
-						<form
-							onSubmit={(e) => {
-								e.preventDefault();
-								handleQuickLikeSubmit();
-							}}
-							onClick={(e) => e.stopPropagation()}
-							className="flex flex-1 items-center gap-1"
-						>
-							<Input
-								ref={quickLikeInputRef}
-								value={quickLikeValue}
-								onChange={(e) => setQuickLikeValue(e.target.value)}
-								onKeyDown={(e) => {
-									if (e.key === 'Escape') {
-										e.preventDefault();
-										cancelQuickLike();
-									}
+				<div className="p-3 flex flex-col gap-2 flex-1 min-h-0">
+					<div className="flex flex-col gap-1">
+						<h3 className="font-semibold text-base leading-snug line-clamp-2 break-all pr-2">{recipe.title}</h3>
+						<p className="text-xs text-muted-foreground line-clamp-3 break-all">{recipe.description}</p>
+					</div>
+					<div ref={tagContainerRef} className="flex flex-wrap gap-1 mt-auto pt-1 overflow-hidden">
+						{tagClamp.visible.map((t: string) => (
+							<span key={t} style={tagStyles(t)} className="text-[11px] px-2.5 py-0.5 rounded-full border leading-none">
+								{t}
+							</span>
+						))}
+						{tagClamp.hidden > 0 && (
+							<span className="text-[11px] px-2.5 py-0.5 rounded-full border leading-none bg-muted/40" style={{}}>
+								+{tagClamp.hidden}
+							</span>
+						)}
+					</div>
+					<div className="flex flex-wrap gap-1">
+						{quickLikeActive ? (
+							<form
+								onSubmit={(e) => {
+									e.preventDefault();
+									handleQuickLikeSubmit();
 								}}
-								placeholder="Name who likes this"
-								className="h-7 flex-1 min-w-0 text-[11px] px-2"
-							/>
-							<Button type="submit" size="sm" className="h-7 px-2 text-[11px]" disabled={!quickLikeValue.trim()}>
-								Add
-							</Button>
-							<Button
+								onClick={(e) => e.stopPropagation()}
+								className="flex flex-1 items-center gap-1"
+							>
+								<Input
+									ref={quickLikeInputRef}
+									value={quickLikeValue}
+									onChange={(e) => setQuickLikeValue(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === 'Escape') {
+											e.preventDefault();
+											cancelQuickLike();
+										}
+									}}
+									placeholder="Name who likes this"
+									className="h-7 flex-1 min-w-0 text-[11px] px-2"
+								/>
+								<Button type="submit" size="sm" className="h-7 px-2 text-[11px]" disabled={!quickLikeValue.trim()}>
+									Add
+								</Button>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									className="h-7 px-2 text-[11px]"
+									onClick={(e) => {
+										e.stopPropagation();
+										cancelQuickLike();
+									}}
+								>
+									Cancel
+								</Button>
+							</form>
+						) : (
+							<button
 								type="button"
-								variant="ghost"
-								size="sm"
-								className="h-7 px-2 text-[11px]"
 								onClick={(e) => {
 									e.stopPropagation();
-									cancelQuickLike();
+									setQuickLikeActive(true);
 								}}
+								className="text-[10px] flex items-center gap-1 text-muted-foreground hover:text-foreground"
 							>
-								Cancel
-							</Button>
-						</form>
-					) : (
-						<button
-							type="button"
-							onClick={(e) => {
-								e.stopPropagation();
-								setQuickLikeActive(true);
-							}}
-							className="text-[10px] flex items-center gap-1 text-muted-foreground hover:text-foreground"
-						>
-							<ThumbsUp className="h-3 w-3" /> like
-						</button>
-					)}
+								<ThumbsUp className="h-3 w-3" /> like
+							</button>
+						)}
+					</div>
 				</div>
 			</div>
-		</div>
 
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogContent className="sm:max-w-3xl p-4 sm:p-5">
@@ -735,385 +735,376 @@ const scrollRef = useRef<HTMLDivElement | null>(null);
 						onScroll={e => updateScrollFade(e.currentTarget)}
 						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
 					>
-					{!editing && (
-										<div className="relative">
-											{full?.photo ? (
-												<img
-													src={full.photo}
-													alt={full.title}
-													className="w-full max-h-80 object-cover rounded"
-													onLoad={() => updateScrollFade()}
-												/>
+						{!editing && (
+							<div className="relative">
+								{full?.photo ? (
+									<img
+										src={full.photo}
+										alt={full.title}
+										className="w-full max-h-80 object-cover rounded"
+										onLoad={() => updateScrollFade()}
+									/>
+								) : (
+									<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
+								)}
+								{likes.length > 0 && (
+									<div className="absolute top-2 right-2 z-10 flex flex-wrap gap-1.5 max-w-[70%] justify-end pointer-events-none">
+										{likes.map(name => (
+											<span key={name} style={likeStyles(name)} className="text-[12px] px-3 py-1.5 rounded-full border leading-none shadow-sm">
+												{name}
+											</span>
+										))}
+									</div>
+								)}
+								<div className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border/70 shadow-md px-3 py-1">
+									<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
+									<Button variant="ghost" type="button" size="icon" className="h-7 w-7 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
+										<Minus className="h-4 w-4" />
+									</Button>
+									<span className="min-w-[2.5rem] text-center font-mono text-sm text-foreground">{usesCount}</span>
+									<Button variant="ghost" type="button" size="icon" className="h-7 w-7 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
+										<Plus className="h-4 w-4" />
+									</Button>
+								</div>
+							</div>
+						)}
+
+						{!editing && <div className="mt-3 text-sm text-muted-foreground">{full?.description ?? recipe.description}</div>}
+
+						{full && !editing && (
+							<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+								<div>
+									<div className="flex items-center justify-between mb-2">
+										<h4 className="font-semibold">Ingredients</h4>
+										<div className="flex items-center gap-1 text-xs">
+											<span className="text-muted-foreground">Servings</span>
+											<Select value={String(viewServings)} onValueChange={(v) => setViewServings(Number(v))}>
+												<SelectTrigger size="sm" className="h-8 w-20">
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													{Array.from({ length: 10 }, (_, i) => i + 1).map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+												</SelectContent>
+											</Select>
+										</div>
+									</div>
+									<ul className="list-disc pl-5 space-y-1 text-sm">
+										{full.ingredients?.map((ing, i) => {
+											const baseServings = full.servings && full.servings > 0 ? full.servings : 1;
+											const factor = viewServings / baseServings;
+											const qty = typeof ing.quantity === 'number' ? Math.round(ing.quantity * factor * 100) / 100 : null;
+											const parts = [qty, ing.unit, ing.name]
+												.filter((part): part is string | number => part !== null && part !== undefined && part !== '')
+												.join(' ');
+											const fallback = ing.line ?? '';
+											return <li key={`${ing.line ?? ing.name ?? i}`}>{parts || fallback}</li>;
+										})}
+									</ul>
+								</div>
+								<div>
+									<h4 className="font-semibold mb-2">Steps</h4>
+									<ol className="list-decimal pl-5 space-y-1 text-sm">
+										{full.steps?.map((st: string, i: number) => (<li key={i}>{st}</li>))}
+									</ol>
+								</div>
+								{full.notes && (
+									<div className="md:col-span-2">
+										<h4 className="font-semibold mb-2">Notes</h4>
+										<div className="text-sm whitespace-pre-wrap">{full.notes}</div>
+									</div>
+								)}
+							</div>
+						)}
+
+						{!editing && (
+							<div className="mt-4 flex flex-wrap gap-2 items-center">
+								{(full?.tags ?? recipe.tags ?? []).map((t: string) => (
+									<span key={t} style={tagStyles(t)} className="text-[11px] h-7 px-3 rounded-full border inline-flex items-center gap-1.5 leading-none">{t}</span>
+								))}
+								{addingTag ? (
+									<div ref={tagBoxRef} className="relative">
+										<form onSubmit={(e) => { e.preventDefault(); submitTag(); }} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
+											<Input
+												ref={inputRef}
+												autoFocus
+												value={tagValue}
+												onChange={e => setTagValue(e.target.value)}
+												onKeyDown={(e) => { if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
+												placeholder="Add tag"
+												className="h-7 text-xs px-2 w-40"
+											/>
+											<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
+										</form>
+										{inputRef.current && createPortal(
+											<TagSuggestions
+												anchor={inputRef.current}
+												items={filteredTags}
+												highlight={highlight}
+												onHighlight={setHighlight}
+												existing={(full?.tags) || []}
+												onPick={(t) => submitTag(t)}
+												query={tagValue.trim()}
+												allTags={allTags}
+												onContainerChange={setTagSuggestionsNode}
+											/>, document.body
+										)}
+									</div>
+								) : (
+									<button onClick={() => setAddingTag(true)} className="text-xs h-7 border border-dashed border-slate-400 rounded-full px-3 text-muted-foreground hover:bg-accent/40">+ tag</button>
+								)}
+							</div>
+						)}
+
+						{editing && (
+							<div className="space-y-4">
+								<div className="flex gap-4 items-start flex-wrap">
+									<div className="flex flex-col gap-2">
+										<input
+											ref={photoInputRef}
+											type="file"
+											accept="image/*"
+											className="hidden"
+											onChange={e => {
+												onPickImage(e.target.files?.[0] || undefined);
+												e.target.value = '';
+											}}
+										/>
+										<button
+											type="button"
+											aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
+											onClick={() => photoInputRef.current?.click()}
+											className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag ? 'ring-2 ring-primary/60' : ''}`}
+											onDragOver={e => { e.preventDefault(); setPhotoDrag(true); }}
+											onDragEnter={e => { e.preventDefault(); setPhotoDrag(true); }}
+											onDragLeave={() => setPhotoDrag(false)}
+											onDrop={e => {
+												e.preventDefault();
+												setPhotoDrag(false);
+												const file = e.dataTransfer.files?.[0];
+												if (file) onPickImage(file);
+											}}
+										>
+											{(photo || full?.photo) ? (
+												<>
+													<img
+														src={photo || full?.photo || ''}
+														alt="Recipe photo preview"
+														className="object-cover w-full h-full"
+														onLoad={() => updateScrollFade()}
+													/>
+													<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
+														<ImagePlus className="h-4 w-4" />
+													</div>
+												</>
 											) : (
-												<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
-											)}
-											{likes.length > 0 && (
-												<div className="absolute top-2 right-2 z-10 flex flex-wrap gap-1.5 max-w-[70%] justify-end pointer-events-none">
-													{likes.map(name => (
-														<span key={name} style={likeStyles(name)} className="text-[12px] px-3 py-1.5 rounded-full border leading-none shadow-sm">
-															{name}
-														</span>
-													))}
+												<div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-muted-foreground">
+													<ImagePlus className="h-6 w-6" />
+													<span>Click, paste (Ctrl+V), or drop an image</span>
 												</div>
 											)}
-											<div className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border/70 shadow-md px-3 py-1">
-												<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
-												<Button variant="ghost" type="button" size="icon" className="h-7 w-7 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
-													<Minus className="h-4 w-4" />
-												</Button>
-												<span className="min-w-[2.5rem] text-center font-mono text-sm text-foreground">{usesCount}</span>
-												<Button variant="ghost" type="button" size="icon" className="h-7 w-7 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
-													<Plus className="h-4 w-4" />
-												</Button>
+										</button>
+									</div>
+									<div className="flex-1 min-w-[16rem] flex flex-col gap-2">
+										<Input value={etitle} onChange={e => setETitle(e.target.value)} placeholder="Title" className="font-semibold" />
+										<Input value={eauthor} onChange={e => setEAuthor(e.target.value)} placeholder="Author" />
+										<Textarea value={edesc} onChange={e => setEDesc(e.target.value)} placeholder="Short description" className="h-20 md:h-24" />
+									</div>
+								</div>
+								<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+									<div>
+										<div className="flex items-center justify-between mb-2">
+											<h4 className="font-semibold">Ingredients</h4>
+											<div className="flex items-center gap-1 text-xs">
+												<span className="text-muted-foreground">Servings</span>
+												<Select value={String(eservings)} onValueChange={(v) => setEServings(Number(v))}>
+													<SelectTrigger size="sm" className="h-8 w-20">
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent>
+														{Array.from({ length: 10 }, (_, i) => i + 1).map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+													</SelectContent>
+												</Select>
 											</div>
 										</div>
-									)}
-						
-					{!editing && <div className="mt-3 text-sm text-muted-foreground">{full?.description ?? recipe.description}</div>}
-						
-					{full && !editing && (
-												<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-													<div>
-														<div className="flex items-center justify-between mb-2">
-															<h4 className="font-semibold">Ingredients</h4>
-															<div className="flex items-center gap-1 text-xs">
-																<span className="text-muted-foreground">Servings</span>
-																<Select value={String(viewServings)} onValueChange={(v)=>setViewServings(Number(v))}>
-																	<SelectTrigger size="sm" className="h-8 w-20">
-																		<SelectValue />
-																	</SelectTrigger>
-																	<SelectContent>
-																		{Array.from({ length: 10 }, (_,i)=>i+1).map(n=> <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-																	</SelectContent>
-																</Select>
-															</div>
-														</div>
-														<ul className="list-disc pl-5 space-y-1 text-sm">
-															{full.ingredients?.map((ing, i) => {
-																const baseServings = full.servings && full.servings > 0 ? full.servings : 1;
-																const factor = viewServings / baseServings;
-																const qty = typeof ing.quantity === 'number' ? Math.round(ing.quantity * factor * 100) / 100 : null;
-																const parts = [qty, ing.unit, ing.name]
-																	.filter((part): part is string | number => part !== null && part !== undefined && part !== '')
-																	.join(' ');
-																const fallback = ing.line ?? '';
-																return <li key={`${ing.line ?? ing.name ?? i}`}>{parts || fallback}</li>;
-															})}
-														</ul>
-													</div>
-													<div>
-														<h4 className="font-semibold mb-2">Steps</h4>
-														<ol className="list-decimal pl-5 space-y-1 text-sm">
-															{full.steps?.map((st: string, i: number) => (<li key={i}>{st}</li>))}
-														</ol>
-													</div>
-													{full.notes && (
-														<div className="md:col-span-2">
-															<h4 className="font-semibold mb-2">Notes</h4>
-															<div className="text-sm whitespace-pre-wrap">{full.notes}</div>
-														</div>
-													)}
+										<div ref={ingredientListRef} className="space-y-2">
+											{eing.map((ing, idx) => (
+												<div key={ing._k} data-drag-item className="flex gap-2 items-center bg-background/40 rounded p-1 pr-2">
+													<button type="button" aria-label="Drag ingredient" onPointerDown={(ev) => ingredientDrag(ev, idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
+														<GripVertical className="h-4 w-4" />
+													</button>
+													<Input aria-label="Quantity" placeholder="#" type="text" inputMode="decimal" value={ing.quantity ?? ''} onChange={e => {
+														const raw = e.target.value.replace(/,/g, '.');
+														const trimmed = raw.trim();
+														const parsed = trimmed === '' ? undefined : Number(trimmed);
+														const quantityValue = parsed === undefined || Number.isNaN(parsed) ? undefined : parsed;
+														setEIng(prev => prev.map((p, i) => i === idx ? { ...p, quantity: quantityValue } : p));
+													}} className="w-16" />
+													<Select value={ing.unit || 'none'} onValueChange={(v) => setEIng(prev => prev.map((p, i) => i === idx ? { ...p, unit: v === 'none' ? undefined : v } : p))}>
+														<SelectTrigger size="sm" className="h-8 w-20">
+															<SelectValue placeholder="-" />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="none">-</SelectItem>
+															{['g', 'kg', 'ml', 'l', 'u', 'tbsp', 'tsp', 'cup', 'pcs'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+														</SelectContent>
+													</Select>
+													<Input aria-label="Ingredient" placeholder="Ingredient" value={ing.name || ing.line || ''} onChange={e => setEIng(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))} className="flex-1" />
+													<button type="button" onClick={() => setEIng(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-muted-foreground hover:text-destructive px-1">✕</button>
 												</div>
-											)}
-						
-					{!editing && (
-												<div className="mt-4 flex flex-wrap gap-2 items-center">
-													{(full?.tags ?? recipe.tags ?? []).map((t: string) => (
-														<span key={t} style={tagStyles(t)} className="text-[11px] h-7 px-3 rounded-full border inline-flex items-center gap-1.5 leading-none">{t}</span>
-													))}
-													{addingTag ? (
-														<div ref={tagBoxRef} className="relative">
-															<form onSubmit={(e)=>{e.preventDefault(); submitTag();}} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
-								<Input
-									ref={inputRef}
-									autoFocus
-									value={tagValue}
-									onChange={e=>setTagValue(e.target.value)}
-									onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
-									placeholder="Add tag"
-									className="h-7 text-xs px-2 w-40"
-								/>
-																<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
-															</form>
-															{inputRef.current && createPortal(
-																<TagSuggestions
-																	anchor={inputRef.current}
-																	items={filteredTags}
-																	highlight={highlight}
-																	onHighlight={setHighlight}
-																	existing={(full?.tags)||[]}
-																	onPick={(t)=> submitTag(t)}
-																	query={tagValue.trim()}
-																	allTags={allTags}
-																	onContainerChange={setTagSuggestionsNode}
-																/>, document.body
-															)}
-														</div>
-													) : (
-														<button onClick={()=>setAddingTag(true)} className="text-xs h-7 border border-dashed border-slate-400 rounded-full px-3 text-muted-foreground hover:bg-accent/40">+ tag</button>
-													)}
+											))}
+											<button data-add-control="ing" type="button" onClick={() => setEIng(prev => [...prev, { quantity: undefined, unit: undefined, name: '', line: '', _k: genKey() }])} className="text-xs text-primary hover:underline">+ Add ingredient</button>
+										</div>
+									</div>
+									<div>
+										<h4 className="font-semibold mb-2">Steps</h4>
+										<div ref={stepListRef} className="space-y-2">
+											{esteps.map((st, idx) => (
+												<div key={st._k} data-drag-item className="flex gap-2 items-start bg-background/40 rounded p-1 pr-2">
+													<button type="button" aria-label="Drag step" onPointerDown={(ev) => stepDrag(ev, idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
+														<GripVertical className="h-4 w-4" />
+													</button>
+													<Textarea value={st.text} onChange={e => setESteps(prev => prev.map((p, i) => i === idx ? { ...p, text: e.target.value } : p))} placeholder={`Step ${idx + 1}`} className="min-h-16 flex-1" />
+													<button type="button" onClick={() => setESteps(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-muted-foreground hover:text-destructive px-1 mt-1">✕</button>
 												</div>
-											)}
-						
-									{editing && (
-												<div className="space-y-4">
-													<div className="flex gap-4 items-start flex-wrap">
-														<div className="flex flex-col gap-2">
-															<input
-																ref={photoInputRef}
-																type="file"
-																accept="image/*"
-																className="hidden"
-																onChange={e=>{
-																	onPickImage(e.target.files?.[0] || undefined);
-																	e.target.value = '';
-																}}
-															/>
-															<button
-																type="button"
-																aria-label={photo ? 'Change recipe photo' : 'Add a recipe photo'}
-																onClick={()=>photoInputRef.current?.click()}
-																className={`w-40 h-40 bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden border rounded relative transition ring-offset-2 ring-offset-background focus-visible:ring-2 focus-visible:ring-primary/60 focus:outline-none cursor-pointer ${photoDrag?'ring-2 ring-primary/60':''}`}
-																onDragOver={e=>{e.preventDefault(); setPhotoDrag(true);}}
-																onDragEnter={e=>{e.preventDefault(); setPhotoDrag(true);}}
-																onDragLeave={()=>setPhotoDrag(false)}
-																onDrop={e=>{
-																	e.preventDefault();
-																	setPhotoDrag(false);
-																	const file = e.dataTransfer.files?.[0];
-																	if (file) onPickImage(file);
-																}}
-															>
-																{(photo || full?.photo) ? (
-																	<>
-																		<img
-																			src={photo || full?.photo || ''}
-																			alt="Recipe photo preview"
-																			className="object-cover w-full h-full"
-																			onLoad={() => updateScrollFade()}
-																		/>
-																		<div className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/50 p-1 text-white">
-																			<ImagePlus className="h-4 w-4" />
-																		</div>
-																	</>
-															) : (
-																<div className="flex flex-col items-center gap-2 px-4 text-center text-xs text-muted-foreground">
-																	<ImagePlus className="h-6 w-6" />
-																	<span>Click, paste (Ctrl+V), or drop an image</span>
-																</div>
-															)}
-														</button>
-													</div>
-													<div className="flex-1 min-w-[16rem] flex flex-col gap-2">
-														<Input value={etitle} onChange={e=>setETitle(e.target.value)} placeholder="Title" className="font-semibold" />
-														<Input value={eauthor} onChange={e=>setEAuthor(e.target.value)} placeholder="Author" />
-														<Textarea value={edesc} onChange={e=>setEDesc(e.target.value)} placeholder="Short description" className="h-20 md:h-24" />
-														</div>
-													</div>
-													<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-														<div>
-															<div className="flex items-center justify-between mb-2">
-																<h4 className="font-semibold">Ingredients</h4>
-																<div className="flex items-center gap-1 text-xs">
-																	<span className="text-muted-foreground">Servings</span>
-																	<Select value={String(eservings)} onValueChange={(v)=>setEServings(Number(v))}>
-																		<SelectTrigger size="sm" className="h-8 w-20">
-																			<SelectValue />
-																		</SelectTrigger>
-																		<SelectContent>
-																			{Array.from({ length: 10 }, (_,i)=>i+1).map(n=> <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
-																		</SelectContent>
-																	</Select>
-																</div>
-															</div>
-															<div ref={ingredientListRef} className="space-y-2">
-																{eing.map((ing, idx) => (
-																	<div key={ing._k} data-drag-item className="flex gap-2 items-center bg-background/40 rounded p-1 pr-2">
-																		<button type="button" aria-label="Drag ingredient" onPointerDown={(ev)=>ingredientDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1">
-																			<GripVertical className="h-4 w-4" />
-																		</button>
-																		<Input aria-label="Quantity" placeholder="#" type="text" inputMode="decimal" value={ing.quantity ?? ''} onChange={e=>{
-																			const raw = e.target.value.replace(/,/g,'.');
-																			const trimmed = raw.trim();
-																			const parsed = trimmed === '' ? undefined : Number(trimmed);
-																			const quantityValue = parsed === undefined || Number.isNaN(parsed) ? undefined : parsed;
-																			setEIng(prev => prev.map((p,i)=> i===idx ? { ...p, quantity: quantityValue } : p));
-																		}} className="w-16" />
-																		<Select value={ing.unit || 'none'} onValueChange={(v)=>setEIng(prev=>prev.map((p,i)=> i===idx ? { ...p, unit: v==='none'? undefined : v } : p))}>
-																			<SelectTrigger size="sm" className="h-8 w-20">
-																				<SelectValue placeholder="-" />
-																			</SelectTrigger>
-																			<SelectContent>
-																				<SelectItem value="none">-</SelectItem>
-																				{['g','kg','ml','l','u','tbsp','tsp','cup','pcs'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-																			</SelectContent>
-																		</Select>
-																		<Input aria-label="Ingredient" placeholder="Ingredient" value={ing.name || ing.line || ''} onChange={e=>setEIng(prev=>prev.map((p,i)=> i===idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))} className="flex-1" />
-																		<button type="button" onClick={()=>setEIng(prev => prev.filter((_,i)=>i!==idx))} className="text-xs text-muted-foreground hover:text-destructive px-1">✕</button>
-																	</div>
-																))}
-																<button data-add-control="ing" type="button" onClick={()=>setEIng(prev=>[...prev, { quantity: undefined, unit: undefined, name: '', line: '', _k: genKey() }])} className="text-xs text-primary hover:underline">+ Add ingredient</button>
-															</div>
-														</div>
-														<div>
-															<h4 className="font-semibold mb-2">Steps</h4>
-															<div ref={stepListRef} className="space-y-2">
-																{esteps.map((st, idx) => (
-																	<div key={st._k} data-drag-item className="flex gap-2 items-start bg-background/40 rounded p-1 pr-2">
-																		<button type="button" aria-label="Drag step" onPointerDown={(ev)=>stepDrag(ev,idx)} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 mt-1">
-																			<GripVertical className="h-4 w-4" />
-																		</button>
-																		<Textarea value={st.text} onChange={e=>setESteps(prev=>prev.map((p,i)=> i===idx ? { ...p, text: e.target.value } : p))} placeholder={`Step ${idx+1}`} className="min-h-16 flex-1" />
-																		<button type="button" onClick={()=>setESteps(prev=>prev.filter((_,i)=>i!==idx))} className="text-xs text-muted-foreground hover:text-destructive px-1 mt-1">✕</button>
-																	</div>
-																))}
-																<button data-add-control="step" type="button" onClick={()=>setESteps(prev=>[...prev, { _k: genKey(), text: '' }])} className="text-xs text-primary hover:underline">+ Add step</button>
-															</div>
-														</div>
-													</div>
-													<div>
-														<h4 className="font-semibold mb-2">Notes</h4>
-														<Textarea value={enotes} onChange={e=>setENotes(e.target.value)} className="min-h-24" />
-													</div>
-													<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
-														<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
-														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
-															<Minus className="h-4 w-4" />
-														</Button>
-														<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
-														<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
-															<Plus className="h-4 w-4" />
-														</Button>
-													</div>
-													<div>
-														<h4 className="font-semibold mb-2">Tags</h4>
-														<div className="flex flex-wrap gap-2 items-center">
-															{(full?.tags ?? []).map(t => (
-																<span key={t} style={tagStyles(t)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
-																	<span>{t}</span>
-																	<button type="button" aria-label={`Remove tag ${t}`} onClick={()=>onRemoveTag(t)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-																		<XIcon className="h-3.5 w-3.5" />
-																	</button>
-																</span>
-															))}
-															{addingTag ? (
-																<div ref={tagBoxRef} className="relative">
-																	<form onSubmit={(e)=>{e.preventDefault(); submitTag();}} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
-									<Input
-										ref={inputRef}
-										autoFocus
-										value={tagValue}
-										onChange={e=>setTagValue(e.target.value)}
-										onKeyDown={(e)=>{ if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
-										placeholder="Add tag"
-										className="h-7 text-xs px-2 w-40"
-									/>
-																		<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
-																	</form>
-																	{inputRef.current && createPortal(
-																		<TagSuggestions
-																			anchor={inputRef.current}
-																			items={filteredTags}
-																			highlight={highlight}
-																			onHighlight={setHighlight}
-																			existing={(full?.tags)||[]}
-																			onPick={(t)=> submitTag(t)}
-																			query={tagValue.trim()}
-																			allTags={allTags}
-																			onContainerChange={setTagSuggestionsNode}
-																		/>, document.body
-																	)}
-																</div>
-															) : (
-																<button type="button" onClick={()=>setAddingTag(true)} className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer">
-																	+ tag
-																</button>
-															)}
-														</div>
-													</div>
-													<div>
-														<h4 className="font-semibold mb-2">Likes</h4>
-
-														<div className="flex flex-wrap gap-2 items-center">
-
-															{likes.map(name => (
-
-																<span key={name} style={likeStyles(name)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
-
-																	<span>{name}</span>
-
-																	<button type="button" aria-label={`Remove like ${name}`} onClick={()=>removeLikeInline(name)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
-
-																		<XIcon className="h-3.5 w-3.5" />
-
-																	</button>
-
-																</span>
-
-															))}
-{addingLike ? (
-																<form
-																	onSubmit={(e)=>{e.preventDefault(); addLikeInline();}}
-																	className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background"
-																>
-																	<Input
-																		ref={likeInputRef}
-																		autoFocus
-																		value={likeValue}
-																		onChange={e=>setLikeValue(e.target.value)}
-																		onKeyDown={e=>{
-																			if (e.key === 'Escape') {
-																				setLikeValue('');
-																				setAddingLike(false);
-																			}
-																		}}
-																		placeholder="Name who likes this"
-																		className="h-7 text-xs px-2 w-44"
-																	/>
-																	<Button type="submit" className="h-7 px-3 text-xs" disabled={!likeValue.trim()}>Add</Button>
-																</form>
-															) : (
-																<button
-																	type="button"
-																	onClick={()=>{ setAddingLike(true); setTimeout(()=>likeInputRef.current?.focus(), 0); }}
-																	className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer"
-																>
-																	+ like
-																</button>
-															)}
-														</div>
-													</div>
-													</div>
+											))}
+											<button data-add-control="step" type="button" onClick={() => setESteps(prev => [...prev, { _k: genKey(), text: '' }])} className="text-xs text-primary hover:underline">+ Add step</button>
+										</div>
+									</div>
+								</div>
+								<div>
+									<h4 className="font-semibold mb-2">Notes</h4>
+									<Textarea value={enotes} onChange={e => setENotes(e.target.value)} className="min-h-24" />
+								</div>
+								<div className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-3 py-2 w-fit">
+									<span className="text-[11px] uppercase tracking-wide text-muted-foreground">Cook count</span>
+									<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={decrementCookCount} disabled={usesCount <= 0} aria-label="Decrease cook count">
+										<Minus className="h-4 w-4" />
+									</Button>
+									<span className="min-w-[2.5rem] text-center font-mono text-base text-foreground">{usesCount}</span>
+									<Button variant="ghost" type="button" size="icon" className="h-8 w-8 rounded-full border border-border/60 bg-background/70 hover:bg-background" onClick={incrementCookCount} aria-label="Increase cook count">
+										<Plus className="h-4 w-4" />
+									</Button>
+								</div>
+								<div>
+									<h4 className="font-semibold mb-2">Tags</h4>
+									<div className="flex flex-wrap gap-2 items-center">
+										{(full?.tags ?? []).map(t => (
+											<span key={t} style={tagStyles(t)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
+												<span>{t}</span>
+												<button type="button" aria-label={`Remove tag ${t}`} onClick={() => onRemoveTag(t)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+													<XIcon className="h-3.5 w-3.5" />
+												</button>
+											</span>
+										))}
+										{addingTag ? (
+											<div ref={tagBoxRef} className="relative">
+												<form onSubmit={(e) => { e.preventDefault(); submitTag(); }} className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background">
+													<Input
+														ref={inputRef}
+														autoFocus
+														value={tagValue}
+														onChange={e => setTagValue(e.target.value)}
+														onKeyDown={(e) => { if (e.key === 'Escape') { setTagValue(''); setAddingTag(false); } else { onKeyDownTag(e); } }}
+														placeholder="Add tag"
+														className="h-7 text-xs px-2 w-40"
+													/>
+													<Button type="submit" className="h-7 px-3 text-xs" disabled={!tagValue.trim()}>Add</Button>
+												</form>
+												{inputRef.current && createPortal(
+													<TagSuggestions
+														anchor={inputRef.current}
+														items={filteredTags}
+														highlight={highlight}
+														onHighlight={setHighlight}
+														existing={(full?.tags) || []}
+														onPick={(t) => submitTag(t)}
+														query={tagValue.trim()}
+														allTags={allTags}
+														onContainerChange={setTagSuggestionsNode}
+													/>, document.body
 												)}
-										
-										<div className="mt-4 flex gap-2 pr-2">
-												{!editing ? (
-													<>
-														<Button onClick={startEdit}>Edit</Button>
-														<Button variant="outline" onClick={() => setOpen(false)}>Close</Button>
-													</>
-												) : (
-													<>
-														<Button onClick={saveEdit}>Save</Button>
-														<Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
-														<Button variant="destructive" className="ml-auto" type="button" onClick={async ()=>{
-															if (!full) return;
-															const sure = confirm(`Delete recipe "${full.title}"? This cannot be undone.`);
-															if (!sure) return;
-															try {
-																await deleteRecipe(full.id);
-															} catch (error) {
-																console.error('Failed to delete recipe', error);
-															}
-															setOpen(false);
-															onChange();
-														}}>Delete</Button>
-													</>
-												)}
-				</div>
-				</div>
-			</DialogContent>
-		</Dialog>
+											</div>
+										) : (
+											<button type="button" onClick={() => setAddingTag(true)} className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer">
+												+ tag
+											</button>
+										)}
+									</div>
+								</div>
+								<div>
+									<h4 className="font-semibold mb-2">Likes</h4>
+									<div className="flex flex-wrap gap-2 items-center">
+										{likes.map(name => (
+											<span key={name} style={likeStyles(name)} className="text-[11px] px-3 py-1 rounded-full border flex items-center gap-1.5 leading-none">
+												<span>{name}</span>
+												<button type="button" aria-label={`Remove like ${name}`} onClick={() => removeLikeInline(name)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+													<XIcon className="h-3.5 w-3.5" />
+												</button>
+											</span>
+										))}
+										{addingLike ? (
+											<form
+												onSubmit={(e) => { e.preventDefault(); addLikeInline(); }}
+												className="text-xs flex items-center gap-1.5 border border-dashed border-slate-400 rounded-full px-2 py-1 bg-background"
+											>
+												<Input
+													ref={likeInputRef}
+													autoFocus
+													value={likeValue}
+													onChange={e => setLikeValue(e.target.value)}
+													onKeyDown={e => {
+														if (e.key === 'Escape') {
+															setLikeValue('');
+															setAddingLike(false);
+														}
+													}}
+													placeholder="Name who likes this"
+													className="h-7 text-xs px-2 w-44"
+												/>
+												<Button type="submit" className="h-7 px-3 text-xs" disabled={!likeValue.trim()}>Add</Button>
+											</form>
+										) : (
+											<button
+												type="button"
+												onClick={() => { setAddingLike(true); setTimeout(() => likeInputRef.current?.focus(), 0); }}
+												className="text-xs border border-dashed border-slate-400 rounded-full px-2.5 py-1 text-muted-foreground hover:bg-accent/40 cursor-pointer"
+											>
+												+ like
+											</button>
+										)}
+									</div>
+								</div>
+							</div>
+						)}
+
+						<div className="mt-4 flex gap-2 pr-2">
+							{!editing ? (
+								<>
+									<Button onClick={startEdit}>Edit</Button>
+									<Button variant="outline" onClick={() => setOpen(false)}>Close</Button>
+								</>
+							) : (
+								<>
+									<Button onClick={saveEdit}>Save</Button>
+									<Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+									<Button variant="destructive" className="ml-auto" type="button" onClick={async () => {
+										if (!full) return;
+										const sure = confirm(`Delete recipe "${full.title}"? This cannot be undone.`);
+										if (!sure) return;
+										try {
+											await deleteRecipe(full.id);
+										} catch (error) {
+											console.error('Failed to delete recipe', error);
+										}
+										setOpen(false);
+										onChange();
+									}}>Delete</Button>
+								</>
+							)}
+						</div>
+					</div>
+				</DialogContent>
+			</Dialog>
 		</>
 	);
 }
