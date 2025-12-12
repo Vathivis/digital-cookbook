@@ -144,15 +144,21 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
 	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
 	FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS ingredient_names (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
 CREATE TABLE IF NOT EXISTS ingredients (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	recipe_id INTEGER NOT NULL,
+	ingredient_id INTEGER,
 	line TEXT NOT NULL,
 	quantity REAL,
 	unit TEXT,
 	name TEXT,
 	position INTEGER NOT NULL,
-	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+	FOREIGN KEY(ingredient_id) REFERENCES ingredient_names(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS steps (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,6 +189,7 @@ const columnDefinitions = {
 		servings: 'INTEGER DEFAULT 1'
 	},
 	ingredients: {
+		ingredient_id: 'INTEGER',
 		quantity: 'REAL',
 		unit: 'TEXT',
 		name: 'TEXT'
@@ -207,9 +214,59 @@ function ensureColumn<T extends keyof ColumnDefinitions>(table: T, column: keyof
 }
 
 ensureColumn('recipes', 'servings');
+ensureColumn('ingredients', 'ingredient_id');
 ensureColumn('ingredients', 'quantity');
 ensureColumn('ingredients', 'unit');
 ensureColumn('ingredients', 'name');
+
+runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_recipe_id ON ingredients(recipe_id)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_ingredient_id ON ingredients(ingredient_id)');
+
+try {
+	runTransaction(() => {
+		runStatement(
+			`
+			INSERT OR IGNORE INTO ingredient_names (name)
+			SELECT DISTINCT TRIM(
+				CASE
+					WHEN ingredients.name IS NOT NULL AND TRIM(ingredients.name) <> '' THEN ingredients.name
+					ELSE ingredients.line
+				END
+			)
+			FROM ingredients
+			WHERE TRIM(
+				CASE
+					WHEN ingredients.name IS NOT NULL AND TRIM(ingredients.name) <> '' THEN ingredients.name
+					ELSE ingredients.line
+				END
+			) <> '';
+			`
+		);
+		runStatement(
+			`
+			UPDATE ingredients
+			SET ingredient_id = (
+				SELECT id FROM ingredient_names
+				WHERE ingredient_names.name = TRIM(
+					CASE
+						WHEN ingredients.name IS NOT NULL AND TRIM(ingredients.name) <> '' THEN ingredients.name
+						ELSE ingredients.line
+					END
+				)
+			)
+			WHERE ingredients.ingredient_id IS NULL
+				AND TRIM(
+					CASE
+						WHEN ingredients.name IS NOT NULL AND TRIM(ingredients.name) <> '' THEN ingredients.name
+						ELSE ingredients.line
+					END
+				) <> '';
+			`
+		);
+	});
+} catch (error) {
+	console.error('Failed to backfill ingredient catalog', error);
+}
 
 const cookbookCountRow = getStatement<{ c: number }>('SELECT COUNT(*) as c FROM cookbooks');
 if (!cookbookCountRow || cookbookCountRow.c === 0) {
@@ -264,25 +321,42 @@ const fetchLikes = (ids: number[]) => {
 
 const insertIngredients = (recipeId: number, list: IngredientInput[]) => {
 	if (!list?.length) return;
-	withStatement(
-		'INSERT INTO ingredients (recipe_id, line, quantity, unit, name, position) VALUES (?,?,?,?,?,?)',
-		(stmt) => {
-			list.forEach((ing, idx) => {
-				if (ing && typeof ing === 'object') {
-					stmt.run(
-						recipeId,
-						ing.line || (ing.name ? ing.name : ''),
-						ing.quantity ?? null,
-						ing.unit ?? null,
-						ing.name ?? null,
-						idx
-					);
-				} else {
-					stmt.run(recipeId, String(ing), null, null, null, idx);
-				}
-			});
-		}
+	const insertName = db.prepare('INSERT OR IGNORE INTO ingredient_names (name) VALUES (?)');
+	const getId = db.prepare('SELECT id FROM ingredient_names WHERE name = ?');
+	const insertRow = db.prepare(
+		'INSERT INTO ingredients (recipe_id, ingredient_id, line, quantity, unit, name, position) VALUES (?,?,?,?,?,?,?)'
 	);
+	try {
+		let position = 0;
+		for (const ing of list) {
+			if (ing && typeof ing === 'object') {
+				const line = (ing.line ?? '').trim() || (ing.name ?? '').trim();
+				const name = typeof ing.name === 'string' ? ing.name.trim() : null;
+				const unit = typeof ing.unit === 'string' ? ing.unit.trim() : null;
+				const quantity = ing.quantity ?? null;
+				if (!line) continue;
+				const lookup = name || line;
+				let ingredientId: number | null = null;
+				if (lookup) {
+					insertName.run(lookup);
+					ingredientId = (getId.get(lookup) as { id: number } | undefined)?.id ?? null;
+				}
+				insertRow.run(recipeId, ingredientId, line, quantity, unit || null, name || null, position);
+				position += 1;
+			} else if (typeof ing === 'string') {
+				const line = ing.trim();
+				if (!line) continue;
+				insertName.run(line);
+				const ingredientId = (getId.get(line) as { id: number } | undefined)?.id ?? null;
+				insertRow.run(recipeId, ingredientId, line, null, null, null, position);
+				position += 1;
+			}
+		}
+	} finally {
+		insertName.finalize();
+		getId.finalize();
+		insertRow.finalize();
+	}
 };
 
 const insertSteps = (recipeId: number, steps: string[]) => {
@@ -387,10 +461,16 @@ export const app = new Elysia({
 						SELECT 1 FROM recipe_likes rl
 						WHERE rl.recipe_id = r.id AND LOWER(rl.name) LIKE ? ESCAPE '\\'
 					)
+					OR EXISTS (
+						SELECT 1 FROM ingredients i
+						LEFT JOIN ingredient_names n ON n.id = i.ingredient_id
+						WHERE i.recipe_id = r.id
+							AND LOWER(COALESCE(n.name, i.name, i.line)) LIKE ? ESCAPE '\\'
+					)
 				)`
 			: '';
 		if (hasTerm) {
-			params.push(likeTerm, likeTerm, likeTerm, likeTerm);
+			params.push(likeTerm, likeTerm, likeTerm, likeTerm, likeTerm);
 		}
 		const limitClause = hasTerm ? 'LIMIT 200' : '';
 		const recipes = allStatement<RecipeRecord>(
@@ -609,6 +689,15 @@ export const app = new Elysia({
 		} catch {
 			set.status = 500;
 			return { error: 'failed to fetch tags' };
+		}
+	})
+	.get('/api/ingredients', ({ set }) => {
+		try {
+			const rows = allStatement<{ name: string }>('SELECT name FROM ingredient_names ORDER BY LOWER(name) ASC');
+			return rows.map((r) => r.name);
+		} catch {
+			set.status = 500;
+			return { error: 'failed to fetch ingredients' };
 		}
 	});
 

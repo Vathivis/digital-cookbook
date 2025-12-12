@@ -115,9 +115,13 @@ export type RecipeInput = {
 
 export async function createRecipe(input: RecipeInput) {
 	const db = await getDb();
-	const stmt = db.prepare(`INSERT INTO recipes (cookbook_id, title, description, author, photo) VALUES (?,?,?,?,?)`);
-	stmt.run([input.cookbook_id, input.title, input.description, input.author, input.photoDataUrl || null]);
-	stmt.free();
+	db.run(`INSERT INTO recipes (cookbook_id, title, description, author, photo) VALUES (?,?,?,?,?)`, [
+		input.cookbook_id,
+		input.title,
+		input.description,
+		input.author,
+		input.photoDataUrl || null,
+	]);
 	const id = db.exec('SELECT last_insert_rowid()')[0].values[0][0] as number;
 	insertList(db, 'ingredients', 'line', id, input.ingredients);
 	insertList(db, 'steps', 'instruction', id, input.steps);
@@ -133,16 +137,18 @@ export async function createRecipe(input: RecipeInput) {
 
 function insertList(db: Database, table: string, column: string, recipeId: number, arr: string[]) {
 	if (!arr || !arr.length) return;
-	const insert = db.prepare(`INSERT INTO ${table} (recipe_id, ${column}, position) VALUES (?,?,?)`);
-	arr.forEach((val, idx) => insert.run([recipeId, val, idx]));
-	insert.free();
+	arr.forEach((val, idx) => {
+		db.run(`INSERT INTO ${table} (recipe_id, ${column}, position) VALUES (?,?,?)`, [recipeId, val, idx]);
+	});
 }
 
 export async function getRecipes(cookbookId: number) {
 	const db = await getDb();
 	const res = db.exec(`SELECT * FROM recipes WHERE cookbook_id = ? ORDER BY created_at DESC`, [cookbookId]);
 	if (res.length === 0) return [];
-	const recipes = res[0].values.map((row: RecipeRow) => ({
+	const recipes = res[0].values.map((value) => {
+		const row = value as RecipeRow;
+		return {
 		id: row[0],
 		cookbook_id: row[1],
 		title: row[2],
@@ -152,7 +158,8 @@ export async function getRecipes(cookbookId: number) {
 		uses: row[6],
 		created_at: row[7],
 		tags: [] as string[],
-	}));
+		};
+	});
 	for (const rec of recipes) {
 		const tagRes = db.exec(`SELECT t.name FROM tags t JOIN recipe_tags rt ON t.id=rt.tag_id WHERE rt.recipe_id = ?`, [rec.id]);
 		rec.tags = tagRes.length ? tagRes[0].values.map(value => value[0] as string) : [];
@@ -171,7 +178,12 @@ type CookbookRow = [number, string];
 export async function listCookbooks() {
 	const db = await getDb();
 	const res = db.exec('SELECT id, name FROM cookbooks ORDER BY created_at ASC');
-	return res.length ? res[0].values.map((value: CookbookRow) => ({ id: value[0], name: value[1] })) : [];
+	return res.length
+		? res[0].values.map((value) => {
+			const row = value as CookbookRow;
+			return { id: row[0], name: row[1] };
+		})
+		: [];
 }
 
 export async function createCookbook(name: string) {

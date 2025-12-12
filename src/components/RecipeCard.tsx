@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, type StructuredIngredient } from '../lib/api';
+import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
 import { loadImageDataUrl } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
@@ -11,7 +11,7 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { TagSuggestions } from './TagSuggestions';
 
-type BaseIngredient = StructuredIngredient & { line?: string | null };
+type BaseIngredient = Omit<StructuredIngredient, 'line'> & { line?: string | null };
 
 interface RecipeSummary {
 	id: number;
@@ -234,6 +234,103 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			setQuickLikeValue('');
 		}
 	}, [quickLikeActive]);
+	const [allIngredients, setAllIngredients] = useState<string[]>([]);
+	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
+	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
+	const [ingredientAnchor, setIngredientAnchor] = useState<HTMLInputElement | null>(null);
+	const [ingredientHighlight, setIngredientHighlight] = useState<number>(-1);
+	const [ingredientSuggestionsNode, setIngredientSuggestionsNode] = useState<HTMLElement | null>(null);
+	const closeIngredientAutocomplete = useCallback(() => {
+		setActiveIngredientIndex(null);
+		setIngredientAnchor(null);
+		setIngredientHighlight(-1);
+	}, []);
+	useEffect(() => {
+		if (!open) closeIngredientAutocomplete();
+	}, [open, closeIngredientAutocomplete]);
+	useEffect(() => {
+		if (!editing) closeIngredientAutocomplete();
+	}, [editing, closeIngredientAutocomplete]);
+	useEffect(() => {
+		if (activeIngredientIndex === null) return;
+		let active = true;
+		(async () => {
+			try {
+				const ingredients = await listIngredients();
+				if (!active) return;
+				setAllIngredients(ingredients);
+				setFilteredIngredients(ingredients.slice(0, 50));
+			} catch (error) {
+				console.error('Failed to load ingredients', error);
+			}
+		})();
+		return () => { active = false; };
+	}, [activeIngredientIndex]);
+	useEffect(() => {
+		if (activeIngredientIndex === null) return;
+		const current = eing[activeIngredientIndex];
+		const q = (current?.name || current?.line || '').trim().toLowerCase();
+		if (!q) { setFilteredIngredients(allIngredients.slice(0, 50)); return; }
+		const scored = allIngredients
+			.filter(t => t.toLowerCase().includes(q))
+			.map(t => {
+				const lt = t.toLowerCase();
+				let score = 0;
+				if (lt === q) score += 100;
+				if (lt.startsWith(q)) score += 50;
+				const idx = lt.indexOf(q);
+				score += Math.max(0, 30 - idx);
+				score -= Math.max(0, lt.length - q.length);
+				return { t, score };
+			})
+			.sort((a, b) => b.score - a.score)
+			.map(x => x.t)
+			.slice(0, 50);
+		setFilteredIngredients(scored);
+	}, [activeIngredientIndex, eing, allIngredients]);
+	useEffect(() => { setIngredientHighlight(-1); }, [filteredIngredients]);
+	const onKeyDownIngredient = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+		if (e.key === 'Escape') {
+			if (activeIngredientIndex !== null) {
+				e.preventDefault();
+				closeIngredientAutocomplete();
+			}
+			return;
+		}
+		if (activeIngredientIndex !== idx) return;
+		if (e.key === 'ArrowDown') { e.preventDefault(); setIngredientHighlight(h => Math.min(filteredIngredients.length - 1, h + 1)); }
+		else if (e.key === 'ArrowUp') { e.preventDefault(); setIngredientHighlight(h => Math.max(-1, h - 1)); }
+		else if (e.key === 'Enter') {
+			e.preventDefault();
+			if (ingredientHighlight >= 0 && filteredIngredients[ingredientHighlight]) {
+				const picked = filteredIngredients[ingredientHighlight].trim();
+				if (!picked) return;
+				setEIng(prev => prev.map((p, i) => i === idx ? { ...p, name: picked, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${picked}`.trim() } : p));
+			}
+			closeIngredientAutocomplete();
+		}
+	};
+	useEffect(() => {
+		if (ingredientHighlight < 0 || !ingredientSuggestionsNode) return;
+		const container = ingredientSuggestionsNode;
+		const el = container.querySelector(`[data-idx="${ingredientHighlight}"]`) as HTMLElement | null;
+		if (!el) return;
+		const top = el.offsetTop;
+		const bottom = top + el.offsetHeight;
+		if (top < container.scrollTop) container.scrollTop = top;
+		else if (bottom > container.scrollTop + container.clientHeight) container.scrollTop = bottom - container.clientHeight;
+	}, [ingredientHighlight, ingredientSuggestionsNode]);
+	useEffect(() => {
+		if (activeIngredientIndex === null) return;
+		const handlePointerDown = (event: PointerEvent) => {
+			const node = event.target as Node;
+			if (ingredientAnchor?.contains(node)) return;
+			if (ingredientSuggestionsNode?.contains(node as HTMLElement)) return;
+			closeIngredientAutocomplete();
+		};
+		document.addEventListener('pointerdown', handlePointerDown);
+		return () => document.removeEventListener('pointerdown', handlePointerDown);
+	}, [activeIngredientIndex, ingredientAnchor, ingredientSuggestionsNode, closeIngredientAutocomplete]);
 	const ingredientListRef = useRef<HTMLDivElement | null>(null);
 	const stepListRef = useRef<HTMLDivElement | null>(null);
 	const imageTaskRef = useRef(0);
@@ -948,11 +1045,42 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 															{['g', 'kg', 'ml', 'l', 'u', 'tbsp', 'tsp', 'cup', 'pcs'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
 														</SelectContent>
 													</Select>
-													<Input aria-label="Ingredient" placeholder="Ingredient" value={ing.name || ing.line || ''} onChange={e => setEIng(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))} className="flex-1" />
+													<Input
+														aria-label="Ingredient"
+														placeholder="Ingredient"
+														value={ing.name || ing.line || ''}
+														onFocus={(e) => {
+															setActiveIngredientIndex(idx);
+															setIngredientAnchor(e.currentTarget);
+															setIngredientHighlight(-1);
+														}}
+														onKeyDown={(e) => onKeyDownIngredient(e, idx)}
+														onBlur={() => { setTimeout(() => closeIngredientAutocomplete(), 0); }}
+														onChange={e => setEIng(prev => prev.map((p, i) => i === idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))}
+														className="flex-1"
+													/>
 													<button type="button" onClick={() => setEIng(prev => prev.filter((_, i) => i !== idx))} className="text-xs text-muted-foreground hover:text-destructive px-1">✕</button>
 												</div>
 											))}
 											<button data-add-control="ing" type="button" onClick={() => setEIng(prev => [...prev, { quantity: undefined, unit: undefined, name: '', line: '', _k: genKey() }])} className="text-xs text-primary hover:underline">+ Add ingredient</button>
+											{ingredientAnchor && activeIngredientIndex !== null && createPortal(
+												<TagSuggestions
+													anchor={ingredientAnchor}
+													items={filteredIngredients}
+													highlight={ingredientHighlight}
+													onHighlight={setIngredientHighlight}
+													existing={eing.map((entry) => (entry.name || entry.line || '').trim()).filter(Boolean)}
+													onPick={(name) => {
+														const picked = name.trim();
+														if (!picked) return;
+														setEIng(prev => prev.map((p, i) => i === activeIngredientIndex ? { ...p, name: picked, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${picked}`.trim() } : p));
+														closeIngredientAutocomplete();
+													}}
+													query={(eing[activeIngredientIndex]?.name || eing[activeIngredientIndex]?.line || '').trim()}
+													allTags={allIngredients}
+													onContainerChange={setIngredientSuggestionsNode}
+												/>, document.body
+											)}
 										</div>
 									</div>
 									<div>

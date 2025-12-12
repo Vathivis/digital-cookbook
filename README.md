@@ -94,6 +94,7 @@ bun run preview
   - `GET /api/recipes/:id`, `POST /api/recipes`, `PATCH /api/recipes/:id`, `DELETE /api/recipes/:id`
   - Tag & like helpers (`POST/DELETE /api/recipes/:id/tags|likes`)
   - Usage counter actions (`POST /api/recipes/:id/increment-uses`, `/decrement-uses`)
+  - Ingredient catalog (`GET /api/ingredients`) backed by a deduped, case-insensitive `ingredient_names` table for autocomplete suggestions
 - Multi-step mutations run inside `db.transaction` calls and follow a “delete & replace” pattern for ordered lists (ingredients, steps, notes) to preserve deterministic ordering.
 
 ## Frontend Interaction Patterns

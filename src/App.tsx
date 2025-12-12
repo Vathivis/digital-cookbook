@@ -20,7 +20,7 @@ interface Recipe {
 	title: string;
 	description: string;
 	author: string;
-	photo?: string;
+	photo?: string | null;
 	uses: number;
 	created_at: string;
 	tags: string[];
