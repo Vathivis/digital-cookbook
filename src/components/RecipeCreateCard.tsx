@@ -40,7 +40,6 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const [description, setDescription] = useState('');
 	const [servings, setServings] = useState<number>(1);
 	const [ingredients, setIngredients] = useState<EditableIngredient[]>([createBlankIngredient()]);
-	const [allIngredients, setAllIngredients] = useState<string[]>([]);
 	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
 	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
 	const [ingredientAnchor, setIngredientAnchor] = useState<HTMLInputElement | null>(null);
@@ -54,43 +53,24 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	useEffect(() => {
 		if (!open) closeIngredientAutocomplete();
 	}, [open, closeIngredientAutocomplete]);
+	const ingredientQuery =
+		activeIngredientIndex === null ? '' : (ingredients[activeIngredientIndex]?.name || ingredients[activeIngredientIndex]?.line || '').trim();
 	useEffect(() => {
 		if (activeIngredientIndex === null) return;
 		let active = true;
-		(async () => {
-			try {
-				const list = await listIngredients();
-				if (!active) return;
-				setAllIngredients(list);
-				setFilteredIngredients(list.slice(0, 50));
-			} catch (error) {
-				console.error('Failed to load ingredients', error);
-			}
-		})();
-		return () => { active = false; };
-	}, [activeIngredientIndex]);
-	useEffect(() => {
-		if (activeIngredientIndex === null) return;
-		const current = ingredients[activeIngredientIndex];
-		const q = (current?.name || current?.line || '').trim().toLowerCase();
-		if (!q) { setFilteredIngredients(allIngredients.slice(0, 50)); return; }
-		const scored = allIngredients
-			.filter(t => t.toLowerCase().includes(q))
-			.map(t => {
-				const lt = t.toLowerCase();
-				let score = 0;
-				if (lt === q) score += 100;
-				if (lt.startsWith(q)) score += 50;
-				const idx = lt.indexOf(q);
-				score += Math.max(0, 30 - idx);
-				score -= Math.max(0, lt.length - q.length);
-				return { t, score };
-			})
-			.sort((a, b) => b.score - a.score)
-			.map(x => x.t)
-			.slice(0, 50);
-		setFilteredIngredients(scored);
-	}, [activeIngredientIndex, ingredients, allIngredients]);
+		const h = setTimeout(() => {
+			(async () => {
+				try {
+					const list = await listIngredients({ cookbookId, q: ingredientQuery, limit: 50 });
+					if (!active) return;
+					setFilteredIngredients(list);
+				} catch (error) {
+					console.error('Failed to load ingredients', error);
+				}
+			})();
+		}, 80);
+		return () => { active = false; clearTimeout(h); };
+	}, [activeIngredientIndex, ingredientQuery, cookbookId]);
 	useEffect(() => { setIngredientHighlight(-1); }, [filteredIngredients]);
 	const onKeyDownIngredient = (e: KeyboardEvent<HTMLInputElement>, idx: number) => {
 		if (e.key === 'Escape') {
@@ -521,7 +501,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 													closeIngredientAutocomplete();
 												}}
 												query={(ingredients[activeIngredientIndex]?.name || ingredients[activeIngredientIndex]?.line || '').trim()}
-												allTags={allIngredients}
+												allTags={filteredIngredients}
 												onContainerChange={setIngredientSuggestionsNode}
 											/>, document.body
 										)}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { CookbookLayoutSidebar } from './components/CookbookLayout';
 import { getRecipes, searchRecipes } from './lib/api';
 import { RecipeCard } from './components/RecipeCard';
@@ -10,9 +11,7 @@ import { Label } from './components/ui/label';
 import { Sun, Moon } from 'lucide-react';
 import { useFlipList } from './hooks/useFlipList';
 import { useAnimatedItems } from './hooks/useAnimatedItems';
-
-type SortMode = 'AZ' | 'ZA' | 'MOST';
-type TagMode = 'AND' | 'OR';
+import { filterAndSortRecipes, type SortMode, type FilterMode } from './lib/filters';
 
 interface Recipe {
 	id: number;
@@ -25,7 +24,31 @@ interface Recipe {
 	created_at: string;
 	tags: string[];
 	likes: string[];
+	ingredientNames: string[];
 }
+
+const computePillStyle = (value: string, selected: boolean, theme: 'light' | 'dark'): CSSProperties => {
+	let hash = 0;
+	for (let i = 0; i < value.length; i++) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+	const hue = Math.abs(hash) % 360;
+	const dark = theme === 'dark';
+	const saturation = 70;
+	const bgSelected = dark ? 38 : 78;
+	const bgUnselected = dark ? 26 : 90;
+	if (selected) {
+		return {
+			backgroundColor: `hsl(${hue},${saturation}%,${bgSelected}%)`,
+			borderColor: `hsl(${hue},${saturation}%,${dark ? bgSelected + 8 : bgSelected - 12}%)`,
+			color: dark ? '#fff' : '#111'
+		};
+	}
+	return {
+		backgroundColor: `hsl(${hue},${Math.round(saturation * 0.55)}%,${bgUnselected}%)`,
+		borderColor: `hsl(${hue},${Math.round(saturation * 0.55)}%,${dark ? bgUnselected + 10 : bgUnselected - 14}%)`,
+		color: dark ? '#e6e6e6' : '#222',
+		opacity: 0.95
+	};
+};
 
 function App() {
 	const [activeCookbook, setActiveCookbook] = useState<number | null>(null);
@@ -33,7 +56,9 @@ function App() {
 	const [query, setQuery] = useState('');
 	const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
 	const [selectedTags, setSelectedTags] = useState<string[]>([]);
-	const [tagMode, setTagMode] = useState<TagMode>('AND');
+	const [tagMode, setTagMode] = useState<FilterMode>('AND');
+	const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+	const [ingredientMode, setIngredientMode] = useState<FilterMode>('AND');
 	const [sortMode, setSortMode] = useState<SortMode>('AZ');
 	const [theme, setTheme] = useState<'light' | 'dark'>(() => {
 		if (typeof localStorage !== 'undefined') {
@@ -65,7 +90,7 @@ function App() {
 		setActiveCookbook(id);
 	}, []);
 	useEffect(() => { reload(); }, [reload]);
-	useEffect(() => { setSelectedTags([]); }, [activeCookbook]);
+	useEffect(() => { setSelectedTags([]); setSelectedIngredients([]); }, [activeCookbook]);
 	useEffect(() => {
 		const h = setTimeout(() => { reload(query); }, 200);
 		return () => clearTimeout(h);
@@ -75,21 +100,22 @@ function App() {
 		allRecipes.forEach(r => (r.tags||[]).forEach((t:string)=>set.add(t)));
 		return Array.from(set).sort((a,b)=>a.localeCompare(b));
 	}, [allRecipes]);
-	const filtered = useMemo(() => {
-		let list = allRecipes;
-		if (selectedTags.length) {
-			list = list.filter(r => {
-				const tags: string[] = r.tags || [];
-				if (tagMode === 'AND') return selectedTags.every(t => tags.includes(t));
-				return selectedTags.some(t => tags.includes(t));
-			});
-		}
-		list = [...list];
-		if (sortMode === 'AZ') list.sort((a,b)=>a.title.localeCompare(b.title));
-		else if (sortMode === 'ZA') list.sort((a,b)=>b.title.localeCompare(a.title));
-		else if (sortMode === 'MOST') list.sort((a,b)=>b.uses - a.uses || a.title.localeCompare(b.title));
-		return list;
-	}, [allRecipes, selectedTags, tagMode, sortMode]);
+	const allIngredients = useMemo(() => {
+		const set = new Set<string>();
+		allRecipes.forEach(r => (r.ingredientNames || []).forEach((ing: string) => set.add(ing)));
+		return Array.from(set).sort((a, b) => a.localeCompare(b));
+	}, [allRecipes]);
+	const filtered = useMemo(
+		() =>
+			filterAndSortRecipes(allRecipes, {
+				selectedTags,
+				tagMode,
+				selectedIngredients,
+				ingredientMode,
+				sortMode
+			}),
+		[allRecipes, selectedTags, tagMode, selectedIngredients, ingredientMode, sortMode]
+	);
 	useEffect(()=>{ setRecipes(filtered); }, [filtered]);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
@@ -108,6 +134,9 @@ function App() {
 	}, [theme]);
 	const toggleTag = (t: string) => {
 		setSelectedTags(prev => prev.includes(t) ? prev.filter(x=>x!==t) : [...prev, t]);
+	};
+	const toggleIngredient = (value: string) => {
+		setSelectedIngredients(prev => prev.includes(value) ? prev.filter(x => x !== value) : [...prev, value]);
 	};
 	return (
 		<div className="min-h-screen flex app-bg">
@@ -155,21 +184,8 @@ function App() {
 						</div>
 						<div className="flex flex-wrap gap-1">
 							{allTags.map(t => {
-								let hash = 0; for (let i=0;i<t.length;i++) hash=(hash*31 + t.charCodeAt(i))|0; const hue=Math.abs(hash)%360; const selected = selectedTags.includes(t);
-								const dark = theme === 'dark';
-								const sat = 70;
-								const bgSel = dark ? 38 : 78;
-								const bgUn = dark ? 26 : 90;
-								const style: React.CSSProperties = selected ? {
-									backgroundColor: `hsl(${hue},${sat}%,${bgSel}%)`,
-									borderColor: `hsl(${hue},${sat}%,${dark?bgSel+8:bgSel-12}%)`,
-									color: dark ? '#fff' : '#111',
-								} : {
-									backgroundColor: `hsl(${hue},${Math.round(sat*0.55)}%,${bgUn}%)`,
-									borderColor: `hsl(${hue},${Math.round(sat*0.55)}%,${dark?bgUn+10:bgUn-14}%)`,
-									color: dark ? '#e6e6e6' : '#222',
-									opacity: 0.95,
-								};
+								const selected = selectedTags.includes(t);
+								const style = computePillStyle(t, selected, theme);
 								return (
 									<button key={t} onClick={()=>toggleTag(t)} style={style} className={`text-[11px] px-2.5 py-0.5 rounded-full border leading-none transition-colors ${selected?'ring-1 ring-border':''}`}>{t}</button>
 								);
@@ -180,6 +196,30 @@ function App() {
 						</div>
 						{selectedTags.length > 0 && (
 							<button onClick={()=>setSelectedTags([])} className="self-start text-xs text-muted-foreground hover:text-foreground underline">Clear tags</button>
+						)}
+						<div className="border-t border-border/70 my-4" />
+						<div className="flex items-center justify-between">
+							<Label className="text-xs uppercase font-semibold tracking-wide text-black dark:text-muted-foreground">Ingredient Filter</Label>
+							<div className="flex gap-1 rounded border overflow-hidden">
+								{(['AND','OR'] as const).map(m => (
+									<button key={m} onClick={()=>setIngredientMode(m)} className={`px-2 py-1 text-[11px] font-medium ${ingredientMode===m?'bg-accent text-accent-foreground':'text-muted-foreground hover:bg-accent/40'}`}>{m}</button>
+								))}
+							</div>
+						</div>
+						<div className="flex flex-wrap gap-1">
+							{allIngredients.map(ing => {
+								const selected = selectedIngredients.includes(ing);
+								const style = computePillStyle(ing, selected, theme);
+								return (
+									<button key={ing} onClick={()=>toggleIngredient(ing)} style={style} className={`text-[11px] px-2.5 py-0.5 rounded-full border leading-none transition-colors ${selected?'ring-1 ring-border':''}`}>{ing}</button>
+								);
+							})}
+							{!allIngredients.length && (
+								<p className="text-xs text-muted-foreground">No ingredients yet</p>
+							)}
+						</div>
+						{selectedIngredients.length > 0 && (
+							<button onClick={()=>setSelectedIngredients([])} className="self-start text-xs text-muted-foreground hover:text-foreground underline">Clear ingredients</button>
 						)}
 					</aside>
 				</main>
@@ -200,7 +240,7 @@ function AnimatedRecipeGrid({ recipes, onChange, cookbookId }: { recipes: Recipe
 			</div>
 			{items.map(it => {
 				const common = `min-h-[23rem] transition-all ${it.exiting ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`;
-				const style: React.CSSProperties = { 
+				const style: CSSProperties = { 
 					transitionDuration: it.exiting ? EXIT_MS + 'ms' : '300ms',
 					transitionProperty: it.exiting ? 'opacity, transform' : 'background-color, color, border-color, background, box-shadow, opacity, transform'
 				};

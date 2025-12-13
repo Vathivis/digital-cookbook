@@ -72,6 +72,11 @@ const cookbookMutationSchema = z.object({ name: nonEmptyString.max(255) });
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const cookbookQuerySchema = z.object({ cookbookId: z.coerce.number().int().positive() });
 const recipeSearchSchema = cookbookQuerySchema.extend({ q: z.string().optional() });
+const ingredientsQuerySchema = z.object({
+	cookbookId: z.coerce.number().int().positive().optional(),
+	q: z.string().optional(),
+	limit: z.coerce.number().int().positive().max(5000).optional()
+});
 const nameSchema = z.object({ name: nonEmptyString.max(255) });
 
 type RecipeCreateInput = z.infer<typeof recipeCreateSchema>;
@@ -297,6 +302,27 @@ const mapRows = (rows: { recipeId: number; name: string }[]) => {
 	return grouped;
 };
 
+const fetchIngredientNames = (ids: number[]) => {
+	if (!ids.length) return {} as Record<number, string[]>;
+	const placeholders = ids.map(() => '?').join(',');
+	const rows = allStatement<{ recipeId: number; name: string }>(
+		`SELECT i.recipe_id as recipeId, TRIM(COALESCE(n.name, i.name, i.line)) as name
+		 FROM ingredients i
+		 LEFT JOIN ingredient_names n ON n.id = i.ingredient_id
+		 WHERE i.recipe_id IN (${placeholders})
+		 ORDER BY i.position ASC`,
+		...ids
+	);
+	const grouped: Record<number, string[]> = {};
+	for (const row of rows) {
+		const name = row.name?.trim();
+		if (!name) continue;
+		const list = grouped[row.recipeId] ?? (grouped[row.recipeId] = []);
+		if (!list.includes(name)) list.push(name);
+	}
+	return grouped;
+};
+
 const fetchTags = (ids: number[]) => {
 	if (!ids.length) return {};
 	const placeholders = ids.map(() => '?').join(',');
@@ -434,10 +460,12 @@ export const app = new Elysia({
 		const ids = recipes.map((r) => r.id as number);
 		const tagsBy = fetchTags(ids);
 		const likesBy = fetchLikes(ids);
+		const ingredientsBy = fetchIngredientNames(ids);
 		return recipes.map((r) => ({
 			...r,
 			tags: tagsBy[r.id] || [],
-			likes: likesBy[r.id] || []
+			likes: likesBy[r.id] || [],
+			ingredientNames: ingredientsBy[r.id] || []
 		}));
 	})
 	.get('/api/recipes/search', ({ query, set }) => {
@@ -486,10 +514,12 @@ export const app = new Elysia({
 		const ids = recipes.map((r) => r.id as number);
 		const tagsBy = fetchTags(ids);
 		const likesBy = fetchLikes(ids);
+		const ingredientsBy = fetchIngredientNames(ids);
 		return recipes.map((r) => ({
 			...r,
 			tags: tagsBy[r.id] || [],
-			likes: likesBy[r.id] || []
+			likes: likesBy[r.id] || [],
+			ingredientNames: ingredientsBy[r.id] || []
 		}));
 	})
 	.get('/api/recipes/:id', ({ params, set }) => {
@@ -524,7 +554,10 @@ export const app = new Elysia({
 			'SELECT name FROM recipe_likes WHERE recipe_id=? ORDER BY created_at ASC',
 			id
 		).map((row) => row.name);
-		return { ...recipe, ingredients, steps, notes: noteRow?.content || '', tags, likes };
+		const ingredientNames = ingredientsRows
+			.map((row) => (row.name && row.name.trim()) || row.line.trim())
+			.filter((v, idx, arr) => v && arr.indexOf(v) === idx);
+		return { ...recipe, ingredients, ingredientNames, steps, notes: noteRow?.content || '', tags, likes };
 	})
 	.post('/api/recipes', ({ body, set }) => {
 		const parsed = recipeCreateSchema.safeParse(body ?? {});
@@ -691,9 +724,70 @@ export const app = new Elysia({
 			return { error: 'failed to fetch tags' };
 		}
 	})
-	.get('/api/ingredients', ({ set }) => {
+	.get('/api/ingredients', ({ query, set }) => {
+		const parsed = ingredientsQuerySchema.safeParse(query);
+		if (!parsed.success) return validationError(set, parsed.error);
+
 		try {
-			const rows = allStatement<{ name: string }>('SELECT name FROM ingredient_names ORDER BY LOWER(name) ASC');
+			const { cookbookId, limit } = parsed.data;
+			const rawTerm = (parsed.data.q ?? '').trim().toLowerCase();
+			const hasTerm = rawTerm.length > 0;
+			const escapedTerm = rawTerm.replace(/[%_]/g, '\\$&');
+			const likeTerm = `%${escapedTerm}%`;
+			const prefixTerm = `${escapedTerm}%`;
+
+			const whereParts: string[] = [];
+			const params: (string | number)[] = [];
+
+			let joinClause = '';
+			if (cookbookId != null) {
+				joinClause = `
+					JOIN ingredients i ON i.ingredient_id = n.id
+					JOIN recipes r ON r.id = i.recipe_id
+				`;
+				whereParts.push('r.cookbook_id = ?');
+				params.push(cookbookId);
+			}
+
+			if (hasTerm) {
+				whereParts.push(`LOWER(n.name) LIKE ? ESCAPE '\\'`);
+				params.push(likeTerm);
+			}
+
+			const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+			const limitClause = limit != null ? 'LIMIT ?' : '';
+
+			const orderClause = hasTerm
+				? `
+					ORDER BY
+						CASE
+							WHEN LOWER(n.name) = ? THEN 0
+							WHEN LOWER(n.name) LIKE ? ESCAPE '\\' THEN 1
+							ELSE 2
+						END,
+						LENGTH(n.name) ASC,
+						LOWER(n.name) ASC
+				`
+				: 'ORDER BY LOWER(n.name) ASC';
+
+			if (hasTerm) {
+				params.push(rawTerm, prefixTerm);
+			}
+			if (limit != null) {
+				params.push(limit);
+			}
+
+			const rows = allStatement<{ name: string }>(
+				`
+				SELECT DISTINCT n.name as name
+				FROM ingredient_names n
+				${joinClause}
+				${whereClause}
+				${orderClause}
+				${limitClause}
+				`,
+				...params
+			);
 			return rows.map((r) => r.name);
 		} catch {
 			set.status = 500;

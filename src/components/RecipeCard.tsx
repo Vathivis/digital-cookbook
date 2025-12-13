@@ -25,6 +25,7 @@ interface RecipeSummary {
 	created_at?: string;
 	tags: string[];
 	likes: string[];
+	ingredientNames?: string[];
 }
 
 interface RecipeDetail extends RecipeSummary {
@@ -234,7 +235,6 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			setQuickLikeValue('');
 		}
 	}, [quickLikeActive]);
-	const [allIngredients, setAllIngredients] = useState<string[]>([]);
 	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
 	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
 	const [ingredientAnchor, setIngredientAnchor] = useState<HTMLInputElement | null>(null);
@@ -251,43 +251,24 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	useEffect(() => {
 		if (!editing) closeIngredientAutocomplete();
 	}, [editing, closeIngredientAutocomplete]);
+	const ingredientQuery =
+		activeIngredientIndex === null ? '' : (eing[activeIngredientIndex]?.name || eing[activeIngredientIndex]?.line || '').trim();
 	useEffect(() => {
 		if (activeIngredientIndex === null) return;
 		let active = true;
-		(async () => {
-			try {
-				const ingredients = await listIngredients();
-				if (!active) return;
-				setAllIngredients(ingredients);
-				setFilteredIngredients(ingredients.slice(0, 50));
-			} catch (error) {
-				console.error('Failed to load ingredients', error);
-			}
-		})();
-		return () => { active = false; };
-	}, [activeIngredientIndex]);
-	useEffect(() => {
-		if (activeIngredientIndex === null) return;
-		const current = eing[activeIngredientIndex];
-		const q = (current?.name || current?.line || '').trim().toLowerCase();
-		if (!q) { setFilteredIngredients(allIngredients.slice(0, 50)); return; }
-		const scored = allIngredients
-			.filter(t => t.toLowerCase().includes(q))
-			.map(t => {
-				const lt = t.toLowerCase();
-				let score = 0;
-				if (lt === q) score += 100;
-				if (lt.startsWith(q)) score += 50;
-				const idx = lt.indexOf(q);
-				score += Math.max(0, 30 - idx);
-				score -= Math.max(0, lt.length - q.length);
-				return { t, score };
-			})
-			.sort((a, b) => b.score - a.score)
-			.map(x => x.t)
-			.slice(0, 50);
-		setFilteredIngredients(scored);
-	}, [activeIngredientIndex, eing, allIngredients]);
+		const h = setTimeout(() => {
+			(async () => {
+				try {
+					const ingredients = await listIngredients({ cookbookId: recipe.cookbook_id, q: ingredientQuery, limit: 50 });
+					if (!active) return;
+					setFilteredIngredients(ingredients);
+				} catch (error) {
+					console.error('Failed to load ingredients', error);
+				}
+			})();
+		}, 80);
+		return () => { active = false; clearTimeout(h); };
+	}, [activeIngredientIndex, ingredientQuery, recipe.cookbook_id]);
 	useEffect(() => { setIngredientHighlight(-1); }, [filteredIngredients]);
 	const onKeyDownIngredient = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
 		if (e.key === 'Escape') {
@@ -1077,7 +1058,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 														closeIngredientAutocomplete();
 													}}
 													query={(eing[activeIngredientIndex]?.name || eing[activeIngredientIndex]?.line || '').trim()}
-													allTags={allIngredients}
+													allTags={filteredIngredients}
 													onContainerChange={setIngredientSuggestionsNode}
 												/>, document.body
 											)}

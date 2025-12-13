@@ -33,6 +33,7 @@ export type RecipeSummary = {
 	created_at: string;
 	tags: string[];
 	likes: string[];
+	ingredientNames: string[];
 };
 
 export type RecipeDetail = RecipeSummary & {
@@ -151,6 +152,11 @@ export async function listTags(): Promise<string[]> {
 	return requestJson<string[]>(`${base}/tags`);
 }
 
-export async function listIngredients(): Promise<string[]> {
-	return requestJson<string[]>(`${base}/ingredients`);
+export async function listIngredients(options?: { cookbookId?: number; q?: string; limit?: number }): Promise<string[]> {
+	const params = new URLSearchParams();
+	if (options?.cookbookId != null) params.set('cookbookId', String(options.cookbookId));
+	if (options?.q != null) params.set('q', options.q);
+	if (options?.limit != null) params.set('limit', String(options.limit));
+	const suffix = params.toString();
+	return requestJson<string[]>(`${base}/ingredients${suffix ? `?${suffix}` : ''}`);
 }
