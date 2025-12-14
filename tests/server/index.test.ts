@@ -81,6 +81,119 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	expect(invalidLikeRemove.status).toBe(404);
 });
 
+test('ingredients endpoint returns catalogued names without duplicates', async () => {
+	const first = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Sugary Toast',
+			description: '',
+			author: '',
+			ingredients: [
+				{ name: 'Sugar', quantity: 1, unit: 'cup', line: '1 cup Sugar' },
+				{ name: 'butter', line: 'butter' }
+			],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(first.status).toBe(200);
+
+	const duplicate = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Another',
+			description: '',
+			author: '',
+			ingredients: [{ name: 'sugar', line: 'sugar' }],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(duplicate.status).toBe(200);
+
+	const cookbookRes = await callApi('/api/cookbooks', {
+		method: 'POST',
+		body: JSON.stringify({ name: `Second ${Date.now()}` })
+	});
+	expect(cookbookRes.status).toBe(200);
+	const cookbook2 = (await cookbookRes.json()) as { id: number };
+
+	const otherCookbook = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: cookbook2.id,
+			title: 'Saffron Tea',
+			description: '',
+			author: '',
+			ingredients: [{ name: 'Saffron', line: 'Saffron' }],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(otherCookbook.status).toBe(200);
+
+	const res = await callApi('/api/ingredients?cookbookId=1');
+	expect(res.status).toBe(200);
+	const names = (await res.json()) as string[];
+	expect(names).toContain('Sugar');
+	expect(names).toContain('butter');
+	expect(names).not.toContain('Saffron');
+	expect(names.filter((n) => n.toLowerCase() === 'sugar')).toHaveLength(1);
+	expect(names.indexOf('butter')).toBeLessThan(names.indexOf('Sugar'));
+
+	const scoped = await callApi(`/api/ingredients?cookbookId=${cookbook2.id}`);
+	expect(scoped.status).toBe(200);
+	const scopedNames = (await scoped.json()) as string[];
+	expect(scopedNames).toContain('Saffron');
+
+	const limited = await callApi('/api/ingredients?cookbookId=1&q=su&limit=1');
+	expect(limited.status).toBe(200);
+	const limitedNames = (await limited.json()) as string[];
+	expect(limitedNames).toHaveLength(1);
+	expect(limitedNames[0]).toBe('Sugar');
+});
+
+test('search finds recipes by ingredient name or line and records ingredient_id', async () => {
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Spiced Tea',
+			description: '',
+			author: '',
+			ingredients: [
+				{ name: 'Cardamom', quantity: 3, unit: 'pods', line: '3 pods Cardamom' },
+				'pinch of salt'
+			],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const { id } = (await createRes.json()) as { id: number };
+
+	const searchRes = await callApi('/api/recipes/search?cookbookId=1&q=carda');
+	expect(searchRes.status).toBe(200);
+	const list = (await searchRes.json()) as Array<{ id: number }>;
+	expect(list.some((r) => r.id === id)).toBe(true);
+
+	const ingredientRows = database
+		.prepare('SELECT ingredient_id, line FROM ingredients WHERE recipe_id = ? ORDER BY position ASC')
+		.all(id) as Array<{ ingredient_id: number | null; line: string }>;
+	expect(ingredientRows[0].ingredient_id).not.toBeNull();
+	expect(ingredientRows[0].line.toLowerCase()).toContain('cardamom');
+
+	const saltRow = ingredientRows.find((row) => row.line.includes('salt'));
+	expect(saltRow?.ingredient_id).not.toBeNull();
+
+	const catalog = database
+		.prepare('SELECT name FROM ingredient_names WHERE id = ?')
+		.get(ingredientRows[0].ingredient_id!) as { name: string } | undefined;
+	expect(catalog?.name.toLowerCase()).toBe('cardamom');
+});
+
 afterAll(() => {
 	try {
 		database.close();
@@ -90,6 +203,8 @@ afterAll(() => {
 	try {
 		if (fs.existsSync(testDbPath)) fs.rmSync(testDbPath);
 	} catch (error) {
-		console.error('Failed to remove test database file', error);
+		if ((error as NodeJS.ErrnoException)?.code !== 'EBUSY') {
+			console.error('Failed to remove test database file', error);
+		}
 	}
 });

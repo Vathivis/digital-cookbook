@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { createRecipe, listTags, type StructuredIngredient } from '../lib/api';
+import { createRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
 import { loadImageDataUrl } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Button } from './ui/button';
@@ -40,6 +40,80 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const [description, setDescription] = useState('');
 	const [servings, setServings] = useState<number>(1);
 	const [ingredients, setIngredients] = useState<EditableIngredient[]>([createBlankIngredient()]);
+	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
+	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
+	const [ingredientAnchor, setIngredientAnchor] = useState<HTMLInputElement | null>(null);
+	const [ingredientHighlight, setIngredientHighlight] = useState(-1);
+	const [ingredientSuggestionsNode, setIngredientSuggestionsNode] = useState<HTMLElement | null>(null);
+	const closeIngredientAutocomplete = useCallback(() => {
+		setActiveIngredientIndex(null);
+		setIngredientAnchor(null);
+		setIngredientHighlight(-1);
+	}, []);
+	useEffect(() => {
+		if (!open) closeIngredientAutocomplete();
+	}, [open, closeIngredientAutocomplete]);
+	const ingredientQuery =
+		activeIngredientIndex === null ? '' : (ingredients[activeIngredientIndex]?.name || ingredients[activeIngredientIndex]?.line || '').trim();
+	useEffect(() => {
+		if (activeIngredientIndex === null) return;
+		let active = true;
+		const h = setTimeout(() => {
+			(async () => {
+				try {
+					const list = await listIngredients({ cookbookId, q: ingredientQuery, limit: 50 });
+					if (!active) return;
+					setFilteredIngredients(list);
+				} catch (error) {
+					console.error('Failed to load ingredients', error);
+				}
+			})();
+		}, 80);
+		return () => { active = false; clearTimeout(h); };
+	}, [activeIngredientIndex, ingredientQuery, cookbookId]);
+	useEffect(() => { setIngredientHighlight(-1); }, [filteredIngredients]);
+	const onKeyDownIngredient = (e: KeyboardEvent<HTMLInputElement>, idx: number) => {
+		if (e.key === 'Escape') {
+			if (activeIngredientIndex !== null) {
+				e.preventDefault();
+				closeIngredientAutocomplete();
+			}
+			return;
+		}
+		if (activeIngredientIndex !== idx) return;
+		if (e.key === 'ArrowDown') { e.preventDefault(); setIngredientHighlight(h => Math.min(filteredIngredients.length - 1, h + 1)); }
+		else if (e.key === 'ArrowUp') { e.preventDefault(); setIngredientHighlight(h => Math.max(-1, h - 1)); }
+		else if (e.key === 'Enter') {
+			e.preventDefault();
+			if (ingredientHighlight >= 0 && filteredIngredients[ingredientHighlight]) {
+				const picked = filteredIngredients[ingredientHighlight].trim();
+				if (!picked) return;
+				setIngredients(prev => prev.map((p, i) => i === idx ? { ...p, name: picked, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${picked}`.trim() } : p));
+			}
+			closeIngredientAutocomplete();
+		}
+	};
+	useEffect(() => {
+		if (ingredientHighlight < 0 || !ingredientSuggestionsNode) return;
+		const container = ingredientSuggestionsNode;
+		const el = container.querySelector(`[data-idx="${ingredientHighlight}"]`) as HTMLElement | null;
+		if (!el) return;
+		const top = el.offsetTop;
+		const bottom = top + el.offsetHeight;
+		if (top < container.scrollTop) container.scrollTop = top;
+		else if (bottom > container.scrollTop + container.clientHeight) container.scrollTop = bottom - container.clientHeight;
+	}, [ingredientHighlight, ingredientSuggestionsNode]);
+	useEffect(() => {
+		if (activeIngredientIndex === null) return;
+		const handlePointerDown = (event: PointerEvent) => {
+			const node = event.target as Node;
+			if (ingredientAnchor?.contains(node)) return;
+			if (ingredientSuggestionsNode?.contains(node as HTMLElement)) return;
+			closeIngredientAutocomplete();
+		};
+		document.addEventListener('pointerdown', handlePointerDown);
+		return () => document.removeEventListener('pointerdown', handlePointerDown);
+	}, [activeIngredientIndex, ingredientAnchor, ingredientSuggestionsNode, closeIngredientAutocomplete]);
 	const [steps, setSteps] = useState<EditableStep[]>([createBlankStep()]);
 	const [notes, setNotes] = useState('');
 	const [photo, setPhoto] = useState<string | undefined>();
@@ -396,11 +470,41 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 														{['g','kg','ml','l','u','tbsp','tsp','cup','pcs'].map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}
 													</SelectContent>
 												</Select>
-												<Input placeholder="Ingredient" value={ing.name || ''} onChange={e=>setIngredients(prev=>prev.map((p,i)=> i===idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))} className="flex-1" />
+												<Input
+													placeholder="Ingredient"
+													value={ing.name || ''}
+													onFocus={(e) => {
+														setActiveIngredientIndex(idx);
+														setIngredientAnchor(e.currentTarget);
+														setIngredientHighlight(-1);
+													}}
+													onKeyDown={(e) => onKeyDownIngredient(e, idx)}
+													onBlur={() => { setTimeout(() => closeIngredientAutocomplete(), 0); }}
+													onChange={e=>setIngredients(prev=>prev.map((p,i)=> i===idx ? { ...p, name: e.target.value, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${e.target.value}`.trim() } : p))}
+													className="flex-1"
+												/>
 												<button type="button" onClick={()=>setIngredients(prev => prev.filter((_,i)=>i!==idx))} className="text-xs text-muted-foreground hover:text-destructive px-1 cursor-pointer">✕</button>
 											</div>
 										))}
 										<button data-add-control="ing" type="button" onClick={()=>setIngredients(prev=>[...prev, createBlankIngredient()])} className="text-xs text-primary hover:underline cursor-pointer">+ Add ingredient</button>
+										{ingredientAnchor && activeIngredientIndex !== null && createPortal(
+											<TagSuggestions
+												anchor={ingredientAnchor}
+												items={filteredIngredients}
+												highlight={ingredientHighlight}
+												onHighlight={setIngredientHighlight}
+												existing={ingredients.map((entry) => (entry.name || entry.line || '').trim()).filter(Boolean)}
+												onPick={(name) => {
+													const picked = name.trim();
+													if (!picked) return;
+													setIngredients(prev => prev.map((p, i) => i === activeIngredientIndex ? { ...p, name: picked, line: `${p.quantity ?? ''} ${p.unit ?? ''} ${picked}`.trim() } : p));
+													closeIngredientAutocomplete();
+												}}
+												query={(ingredients[activeIngredientIndex]?.name || ingredients[activeIngredientIndex]?.line || '').trim()}
+												allTags={filteredIngredients}
+												onContainerChange={setIngredientSuggestionsNode}
+											/>, document.body
+										)}
 									</div>
 								</div>
 								<div>

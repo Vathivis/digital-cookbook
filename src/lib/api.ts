@@ -1,5 +1,5 @@
 export interface StructuredIngredient {
-	line?: string;
+	line?: string | null;
 	quantity?: number | null;
 	unit?: string | null;
 	name?: string | null;
@@ -17,6 +17,29 @@ export type RecipeInput = {
 	notes?: string;
 	photoDataUrl?: string;
 	tags?: string[];
+};
+
+export type Cookbook = { id: number; name: string };
+
+export type RecipeSummary = {
+	id: number;
+	cookbook_id: number;
+	title: string;
+	description: string;
+	author: string;
+	photo: string | null;
+	uses: number;
+	servings: number;
+	created_at: string;
+	tags: string[];
+	likes: string[];
+	ingredientNames: string[];
+};
+
+export type RecipeDetail = RecipeSummary & {
+	ingredients: StructuredIngredient[];
+	steps: string[];
+	notes: string;
 };
 
 const base = '/api';
@@ -56,8 +79,8 @@ async function requestJson<T>(path: string, init?: RequestInit) {
 	return response.json() as Promise<T>;
 }
 
-export async function listCookbooks() {
-	return requestJson(`${base}/cookbooks`);
+export async function listCookbooks(): Promise<Cookbook[]> {
+	return requestJson<Cookbook[]>(`${base}/cookbooks`);
 }
 
 export async function createCookbook(name: string) {
@@ -73,15 +96,15 @@ export async function deleteCookbook(id: number) {
 }
 
 export async function getRecipes(cookbookId: number) {
-	return requestJson(`${base}/recipes?cookbookId=${cookbookId}`);
+	return requestJson<RecipeSummary[]>(`${base}/recipes?cookbookId=${cookbookId}`);
 }
 
 export async function searchRecipes(cookbookId: number, q: string) {
-	return requestJson(`${base}/recipes/search?cookbookId=${cookbookId}&q=${encodeURIComponent(q)}`);
+	return requestJson<RecipeSummary[]>(`${base}/recipes/search?cookbookId=${cookbookId}&q=${encodeURIComponent(q)}`);
 }
 
 export async function createRecipe(input: RecipeInput) {
-	return requestJson(`${base}/recipes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+	return requestJson<{ id: number }>(`${base}/recipes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
 }
 
 export async function incrementUses(recipeId: number) {
@@ -106,7 +129,7 @@ export async function removeTagFromRecipe(recipeId: number, name: string) {
 }
 
 export async function getRecipe(id: number) {
-	return requestJson(`${base}/recipes/${id}`);
+	return requestJson<RecipeDetail>(`${base}/recipes/${id}`);
 }
 
 export async function updateRecipe(id: number, patch: Partial<RecipeInput>) {
@@ -126,5 +149,14 @@ export async function deleteRecipe(id: number) {
 }
 
 export async function listTags(): Promise<string[]> {
-	return requestJson(`${base}/tags`);
+	return requestJson<string[]>(`${base}/tags`);
+}
+
+export async function listIngredients(options?: { cookbookId?: number; q?: string; limit?: number }): Promise<string[]> {
+	const params = new URLSearchParams();
+	if (options?.cookbookId != null) params.set('cookbookId', String(options.cookbookId));
+	if (options?.q != null) params.set('q', options.q);
+	if (options?.limit != null) params.set('limit', String(options.limit));
+	const suffix = params.toString();
+	return requestJson<string[]>(`${base}/ingredients${suffix ? `?${suffix}` : ''}`);
 }
