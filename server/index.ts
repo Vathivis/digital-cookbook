@@ -803,20 +803,44 @@ if (shouldServeStatic) {
 	app.get('/*', async ({ request, set }) => {
 		const url = new URL(request.url);
 		let pathname = url.pathname;
-		try {
-			pathname = decodeURIComponent(pathname);
-		} catch {
-			// ignore decode failures; fall back to raw path
-		}
 		if (pathname === '/' || pathname === '') pathname = '/index.html';
 
-		const relativePath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
-		const normalized = path.normalize(path.join(distDir, relativePath));
-		if (!normalized.startsWith(distDir)) return notFound(set);
+		// Reject encoded path separators so decoding can't introduce new traversal segments.
+		if (/%2f|%5c/i.test(pathname)) return notFound(set);
 
-		const file = Bun.file(normalized);
+		// Decode per segment to avoid turning encoded separators into actual ones.
+		const decodedPathname = pathname
+			.split('/')
+			.map((segment) => {
+				try {
+					return decodeURIComponent(segment);
+				} catch {
+					return segment;
+				}
+			})
+			.join('/');
+
+		// Treat backslashes as invalid to avoid Windows separator tricks.
+		if (decodedPathname.includes('\\')) return notFound(set);
+
+		// Never fall back to the SPA for API paths (preserve API 404 semantics).
+		if (decodedPathname === '/api' || decodedPathname.startsWith('/api/')) return notFound(set);
+
+		const relativePath = decodedPathname.replace(/^\/+/, '');
+		const filePath = path.resolve(distDir, relativePath);
+		const relativeToDist = path.relative(distDir, filePath);
+		if (
+			relativeToDist === '' ||
+			relativeToDist === '..' ||
+			relativeToDist.startsWith(`..${path.sep}`) ||
+			path.isAbsolute(relativeToDist)
+		) {
+			return notFound(set);
+		}
+
+		const file = Bun.file(filePath);
 		if (await file.exists()) {
-			if (pathname.startsWith('/assets/')) {
+			if (relativeToDist.startsWith(`assets${path.sep}`)) {
 				set.headers['Cache-Control'] = 'public, max-age=31536000, immutable';
 			} else {
 				set.headers['Cache-Control'] = 'no-cache';
@@ -825,7 +849,7 @@ if (shouldServeStatic) {
 		}
 
 		// Asset-like paths that don't exist should be a 404 (avoid returning index.html).
-		if (path.extname(pathname)) return notFound(set);
+		if (path.extname(relativeToDist)) return notFound(set);
 
 		const indexFile = Bun.file(distIndexPath);
 		if (await indexFile.exists()) {
