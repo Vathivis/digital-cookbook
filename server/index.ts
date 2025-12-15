@@ -90,6 +90,10 @@ const resolvedDbPath = envDbPath ? path.resolve(envDbPath) : path.join(defaultDa
 const resolvedDir = envDbPath ? path.dirname(resolvedDbPath) : defaultDataDir;
 if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
 
+const distDir = path.resolve(__dirname, '../dist');
+const distIndexPath = path.join(distDir, 'index.html');
+const shouldServeStatic = process.env.SERVE_STATIC !== 'false' && fs.existsSync(distIndexPath);
+
 const db = new Database(resolvedDbPath, { create: true });
 export const database = db;
 db.exec('PRAGMA journal_mode = WAL;');
@@ -795,7 +799,45 @@ export const app = new Elysia({
 		}
 	});
 
+if (shouldServeStatic) {
+	app.get('/*', async ({ request, set }) => {
+		const url = new URL(request.url);
+		let pathname = url.pathname;
+		try {
+			pathname = decodeURIComponent(pathname);
+		} catch {
+			// ignore decode failures; fall back to raw path
+		}
+		if (pathname === '/' || pathname === '') pathname = '/index.html';
+
+		const relativePath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+		const normalized = path.normalize(path.join(distDir, relativePath));
+		if (!normalized.startsWith(distDir)) return notFound(set);
+
+		const file = Bun.file(normalized);
+		if (await file.exists()) {
+			if (pathname.startsWith('/assets/')) {
+				set.headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+			} else {
+				set.headers['Cache-Control'] = 'no-cache';
+			}
+			return new Response(file);
+		}
+
+		// Asset-like paths that don't exist should be a 404 (avoid returning index.html).
+		if (path.extname(pathname)) return notFound(set);
+
+		const indexFile = Bun.file(distIndexPath);
+		if (await indexFile.exists()) {
+			set.headers['Cache-Control'] = 'no-cache';
+			return new Response(indexFile);
+		}
+		return notFound(set);
+	});
+}
+
 if (import.meta.main) {
-	app.listen(PORT);
-	console.log(`API listening on http://localhost:${app.server?.hostname || 'localhost'}:${app.server?.port || PORT}`);
+	const hostname = process.env.HOST?.trim() || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
+	app.listen({ port: PORT, hostname });
+	console.log(`API listening on http://${hostname}:${app.server?.port || PORT}`);
 }
