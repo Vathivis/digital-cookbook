@@ -25,4 +25,3 @@ dist-ssr
 .tmp-tests
 todo.md
 *.db*
-bun.lockb

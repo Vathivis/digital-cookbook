@@ -7,6 +7,16 @@ if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 const testDbPath = path.join(tmpDir, `cookbook-${Date.now()}.db`);
 process.env.COOKBOOK_DB_PATH = testDbPath;
 
+// Ensure static serving is enabled for these tests (server checks for dist/index.html on startup).
+const distDir = path.resolve(process.cwd(), 'dist');
+const distIndexPath = path.join(distDir, 'index.html');
+const distDirExisted = fs.existsSync(distDir);
+const distIndexExisted = fs.existsSync(distIndexPath);
+if (!distIndexExisted) {
+	if (!distDirExisted) fs.mkdirSync(distDir, { recursive: true });
+	fs.writeFileSync(distIndexPath, '<!doctype html><html><body>test-spa</body></html>');
+}
+
 type AppLike = {
 	handle?(request: Request): Promise<Response>;
 	fetch(request: Request): Promise<Response>;
@@ -22,6 +32,32 @@ async function callApi(pathname: string, init?: RequestInit) {
 	const handler = appLike.handle ?? appLike.fetch;
 	return handler.call(app, request);
 }
+
+test('unknown /api routes return a JSON 404 even with static SPA fallback enabled', async () => {
+	const res = await callApi('/api/does-not-exist');
+	expect(res.status).toBe(404);
+	await expect(res.json()).resolves.toEqual({ error: 'not found' });
+});
+
+test('static file serving blocks traversal via encoded separators', async () => {
+	const siblingDistDir = path.resolve(process.cwd(), 'dist2');
+	const siblingFilePath = path.join(siblingDistDir, 'secret.txt');
+
+	fs.mkdirSync(siblingDistDir, { recursive: true });
+	fs.writeFileSync(siblingFilePath, 'leak');
+
+	try {
+		const res = await callApi('/..%2Fdist2/secret.txt');
+		expect(res.status).toBe(404);
+		await expect(res.json()).resolves.toEqual({ error: 'not found' });
+	} finally {
+		try {
+			fs.rmSync(siblingDistDir, { recursive: true, force: true });
+		} catch (error) {
+			console.error('Failed to clean up sibling dist directory after test', error);
+		}
+	}
+});
 
 test('recipe mutations handle image clears and invalid ids', async () => {
 	const createRes = await callApi('/api/recipes', {
@@ -206,5 +242,15 @@ afterAll(() => {
 		if ((error as NodeJS.ErrnoException)?.code !== 'EBUSY') {
 			console.error('Failed to remove test database file', error);
 		}
+	}
+
+	try {
+		if (!distIndexExisted && fs.existsSync(distIndexPath)) fs.rmSync(distIndexPath);
+		if (!distDirExisted && fs.existsSync(distDir)) {
+			const remaining = fs.readdirSync(distDir);
+			if (remaining.length === 0) fs.rmdirSync(distDir);
+		}
+	} catch (error) {
+		console.error('Failed to clean up dist artifacts after tests', error);
 	}
 });

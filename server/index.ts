@@ -90,6 +90,10 @@ const resolvedDbPath = envDbPath ? path.resolve(envDbPath) : path.join(defaultDa
 const resolvedDir = envDbPath ? path.dirname(resolvedDbPath) : defaultDataDir;
 if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
 
+const distDir = path.resolve(__dirname, '../dist');
+const distIndexPath = path.join(distDir, 'index.html');
+const shouldServeStatic = process.env.SERVE_STATIC !== 'false' && fs.existsSync(distIndexPath);
+
 const db = new Database(resolvedDbPath, { create: true });
 export const database = db;
 db.exec('PRAGMA journal_mode = WAL;');
@@ -795,7 +799,69 @@ export const app = new Elysia({
 		}
 	});
 
+if (shouldServeStatic) {
+	app.get('/*', async ({ request, set }) => {
+		const url = new URL(request.url);
+		let pathname = url.pathname;
+		if (pathname === '/' || pathname === '') pathname = '/index.html';
+
+		// Reject encoded path separators so decoding can't introduce new traversal segments.
+		if (/%2f|%5c/i.test(pathname)) return notFound(set);
+
+		// Decode per segment to avoid turning encoded separators into actual ones.
+		const decodedPathname = pathname
+			.split('/')
+			.map((segment) => {
+				try {
+					return decodeURIComponent(segment);
+				} catch {
+					return segment;
+				}
+			})
+			.join('/');
+
+		// Treat backslashes as invalid to avoid Windows separator tricks.
+		if (decodedPathname.includes('\\')) return notFound(set);
+
+		// Never fall back to the SPA for API paths (preserve API 404 semantics).
+		if (decodedPathname === '/api' || decodedPathname.startsWith('/api/')) return notFound(set);
+
+		const relativePath = decodedPathname.replace(/^\/+/, '');
+		const filePath = path.resolve(distDir, relativePath);
+		const relativeToDist = path.relative(distDir, filePath);
+		if (
+			relativeToDist === '' ||
+			relativeToDist === '..' ||
+			relativeToDist.startsWith(`..${path.sep}`) ||
+			path.isAbsolute(relativeToDist)
+		) {
+			return notFound(set);
+		}
+
+		const file = Bun.file(filePath);
+		if (await file.exists()) {
+			if (relativeToDist.startsWith(`assets${path.sep}`)) {
+				set.headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+			} else {
+				set.headers['Cache-Control'] = 'no-cache';
+			}
+			return new Response(file);
+		}
+
+		// Asset-like paths that don't exist should be a 404 (avoid returning index.html).
+		if (path.extname(relativeToDist)) return notFound(set);
+
+		const indexFile = Bun.file(distIndexPath);
+		if (await indexFile.exists()) {
+			set.headers['Cache-Control'] = 'no-cache';
+			return new Response(indexFile);
+		}
+		return notFound(set);
+	});
+}
+
 if (import.meta.main) {
-	app.listen(PORT);
-	console.log(`API listening on http://localhost:${app.server?.hostname || 'localhost'}:${app.server?.port || PORT}`);
+	const hostname = process.env.HOST?.trim() || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost');
+	app.listen({ port: PORT, hostname });
+	console.log(`API listening on http://${hostname}:${app.server?.port || PORT}`);
 }

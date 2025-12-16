@@ -87,6 +87,28 @@ bun run build
 bun run preview
 ```
 
+## Docker (single container)
+Docker Hub image: https://hub.docker.com/r/vathivis/digital-cookbook
+
+The provided `Dockerfile` builds the Vite frontend and serves it from the same Bun/Elysia server process. The container exposes one port and serves:
+- `GET /` (and SPA routes) from `dist/`
+- `/api/*` from the Elysia API
+
+
+```bash
+# Build image
+docker build -t digital-cookbook:local .
+
+# Run (persists SQLite DB in a named volume)
+docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data digital-cookbook:local
+```
+
+Open `http://localhost:4000`.
+
+Notes:
+- Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
+- Override listen address/port with `HOST` / `PORT` env vars if needed.
+
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:
   - `GET /api/cookbooks`, `POST /api/cookbooks`, `PATCH/DELETE /api/cookbooks/:id`
