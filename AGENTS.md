@@ -85,6 +85,6 @@ DB file: `data/cookbook.db` (WAL). Safe to delete for reset (will reseed one coo
 - Prefer optimistic UI updates only where current code already does (likes). If adding new optimistic flows, ensure final sync by re-fetching.
 
 ## 10. Commit Message Instructions
-Start with the task category like feat, refactor, fix, etc with a colon behind it, them the rest of the first line should be a single line summary with no more than 100 characters. The second line should be blank. Start the full summary on the third line. Use bullet points with short descriptions of the changes.
+Start with the task category like feat, refactor, fix, etc with a colon behind it, then the rest of the first line should be a single line summary with no more than 100 characters. The second line should be blank. Start the full summary on the third line. Use bullet points with short descriptions of the changes.
 
 (End)
