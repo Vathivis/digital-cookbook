@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { CookbookLayoutSidebar } from './components/CookbookLayout';
-import { getRecipes, searchRecipes } from './lib/api';
+import { AUTH_EXPIRED_EVENT, getAuthStatus, getRecipes, logout, searchRecipes, type AuthStatus } from './lib/api';
 import { RecipeCard } from './components/RecipeCard';
 import { RecipeCreateCard } from './components/RecipeCreateCard';
+import { LoginScreen } from './components/LoginScreen';
 import { Input } from './components/ui/input';
 import { Switch } from './components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
@@ -51,8 +52,8 @@ const computePillStyle = (value: string, selected: boolean, theme: 'light' | 'da
 };
 
 function App() {
+	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 	const [activeCookbook, setActiveCookbook] = useState<number | null>(null);
-	const [recipes, setRecipes] = useState<Recipe[]>([]);
 	const [query, setQuery] = useState('');
 	const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
 	const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -70,6 +71,26 @@ function App() {
 		}
 		return 'light';
 	});
+	const refreshAuthStatus = useCallback(async () => {
+		try {
+			const status = await getAuthStatus();
+			setAuthStatus(status);
+		} catch (error) {
+			console.error('Failed to fetch auth status', error);
+			setAuthStatus({ enabled: true, authenticated: false });
+		}
+	}, []);
+	useEffect(() => {
+		void refreshAuthStatus();
+	}, [refreshAuthStatus]);
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+		const onExpired = () => {
+			setAuthStatus({ enabled: true, authenticated: false });
+		};
+		window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+		return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+	}, []);
 	const queryRef = useRef(query);
 	useEffect(() => {
 		queryRef.current = query;
@@ -77,6 +98,7 @@ function App() {
 	const reload = useCallback(
 		(overrideQuery?: string) => {
 			if (!activeCookbook) return Promise.resolve();
+			if (authStatus?.enabled && !authStatus.authenticated) return Promise.resolve();
 			const q = (overrideQuery ?? queryRef.current).trim();
 			const run = async () => {
 				const data = q ? await searchRecipes(activeCookbook, q) : await getRecipes(activeCookbook);
@@ -84,17 +106,42 @@ function App() {
 			};
 			return run();
 		},
-		[activeCookbook]
+		[activeCookbook, authStatus]
 	);
+	const reloadRef = useRef(reload);
+	useEffect(() => {
+		reloadRef.current = reload;
+	}, [reload]);
+	const queryEffectInitializedRef = useRef(false);
 	const handleCookbookSelect = useCallback((id: number | null) => {
 		setActiveCookbook(id);
 	}, []);
+	const handleLogout = useCallback(async () => {
+		try {
+			await logout();
+		} finally {
+			await refreshAuthStatus();
+		}
+	}, [refreshAuthStatus]);
+	useEffect(() => {
+		if (!authStatus?.enabled || authStatus.authenticated) return;
+		setActiveCookbook(null);
+		setAllRecipes([]);
+		setSelectedTags([]);
+		setSelectedIngredients([]);
+	}, [authStatus]);
 	useEffect(() => { reload(); }, [reload]);
 	useEffect(() => { setSelectedTags([]); setSelectedIngredients([]); }, [activeCookbook]);
 	useEffect(() => {
-		const h = setTimeout(() => { reload(query); }, 200);
+		if (!queryEffectInitializedRef.current) {
+			queryEffectInitializedRef.current = true;
+			return;
+		}
+		const h = setTimeout(() => {
+			void reloadRef.current(query);
+		}, 200);
 		return () => clearTimeout(h);
-	}, [query, reload]);
+	}, [query]);
 	const allTags = useMemo(() => {
 		const set = new Set<string>();
 		allRecipes.forEach(r => (r.tags||[]).forEach((t:string)=>set.add(t)));
@@ -116,7 +163,6 @@ function App() {
 			}),
 		[allRecipes, selectedTags, tagMode, selectedIngredients, ingredientMode, sortMode]
 	);
-	useEffect(()=>{ setRecipes(filtered); }, [filtered]);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const root = document.documentElement;
@@ -138,6 +184,17 @@ function App() {
 	const toggleIngredient = (value: string) => {
 		setSelectedIngredients(prev => prev.includes(value) ? prev.filter(x => x !== value) : [...prev, value]);
 	};
+	if (!authStatus) {
+		return (
+			<div className="min-h-screen app-bg flex items-center justify-center p-6">
+				<div className="rounded-xl border border-border bg-card px-5 py-3 text-sm text-muted-foreground">Loading...</div>
+			</div>
+		);
+	}
+	if (authStatus.enabled && !authStatus.authenticated) {
+		return <LoginScreen onSuccess={refreshAuthStatus} />;
+	}
+	const authLabel = authStatus.enabled && authStatus.authenticated ? `Logout (${authStatus.username})` : 'Logout';
 	return (
 		<div className="min-h-screen flex app-bg">
 			<CookbookLayoutSidebar activeCookbookId={activeCookbook} onSelect={handleCookbookSelect} />
@@ -145,6 +202,17 @@ function App() {
 				<header className="p-4 flex items-center gap-4 border-b bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/70">
 					<h1 className="text-xl font-semibold">Recipes</h1>
 					<div className="ml-auto flex items-center gap-4 text-muted-foreground">
+						{authStatus.enabled && (
+							<button
+								type="button"
+								className="text-xs px-2 py-1 rounded border border-border hover:bg-accent/50 text-foreground"
+								onClick={() => {
+									void handleLogout();
+								}}
+							>
+								{authLabel}
+							</button>
+						)}
 						<Sun className={`h-4 w-4 ${theme==='light'?'text-primary':''}`} />
 						<Switch checked={theme==='dark'} onCheckedChange={(c)=>setTheme(c?'dark':'light')} aria-label="Toggle dark mode" />
 						<Moon className={`h-4 w-4 ${theme==='dark'?'text-primary':''}`} />
@@ -153,7 +221,7 @@ function App() {
 				<main className="flex flex-1 overflow-hidden">
 					<div className="flex-1 p-6 overflow-auto">
 						{activeCookbook && (
-							<AnimatedRecipeGrid recipes={recipes} onChange={reload} cookbookId={activeCookbook} />
+							<AnimatedRecipeGrid recipes={filtered} onChange={reload} cookbookId={activeCookbook} />
 						)}
 					</div>
 					<aside className="w-72 border-l border-border p-4 flex flex-col gap-4 bg-sidebar/60 backdrop-blur supports-[backdrop-filter]:bg-sidebar/40 overflow-y-auto">

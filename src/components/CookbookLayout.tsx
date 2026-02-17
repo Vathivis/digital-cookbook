@@ -24,7 +24,7 @@ export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 		(async () => {
 			setCookbooks(await listCookbooks());
 		})();
-	}, [adding]);
+	}, []);
 
 	useEffect(() => {
 		const next = deriveNextCookbookId(activeCookbookId, cookbooks);
