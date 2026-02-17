@@ -12,6 +12,7 @@ Object.assign(globalThis, {
 	navigator: globalWindow.navigator,
 	HTMLElement: globalWindow.HTMLElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
+	DocumentFragment: globalWindow.DocumentFragment,
 	Node: globalWindow.Node,
 });
 
