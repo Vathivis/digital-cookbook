@@ -88,7 +88,7 @@ bun run preview
 ```
 
 ## Docker (single container)
-Docker Hub image: https://hub.docker.com/r/vathivis/digital-cookbook
+GitHub Container Registry image: `ghcr.io/vathivis/digital-cookbook`
 
 The provided `Dockerfile` builds the Vite frontend and serves it from the same Bun/Elysia server process. The container exposes one port and serves:
 - `GET /` (and SPA routes) from `dist/`
@@ -96,6 +96,12 @@ The provided `Dockerfile` builds the Vite frontend and serves it from the same B
 
 
 ```bash
+# Pull prebuilt image from GHCR
+docker pull ghcr.io/vathivis/digital-cookbook:latest
+
+# Run GHCR image (persists SQLite DB in a named volume)
+docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data ghcr.io/vathivis/digital-cookbook:latest
+
 # Build image
 docker build -t digital-cookbook:local .
 
