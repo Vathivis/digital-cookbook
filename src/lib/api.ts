@@ -42,6 +42,26 @@ export type RecipeDetail = RecipeSummary & {
 	notes: string;
 };
 
+export type AuthStatus =
+	| { enabled: false; authenticated: true }
+	| { enabled: true; authenticated: false }
+	| { enabled: true; authenticated: true; username: string };
+
+export type LoginInput = {
+	username: string;
+	password: string;
+	rememberPermanently?: boolean;
+};
+
+export const AUTH_EXPIRED_EVENT = 'dc-auth-expired';
+
+export class AuthExpiredError extends Error {
+	constructor(message = 'unauthorized') {
+		super(message);
+		this.name = 'AuthExpiredError';
+	}
+}
+
 const base = '/api';
 
 const parseErrorMessage = async (response: Response) => {
@@ -66,17 +86,49 @@ const parseErrorMessage = async (response: Response) => {
 	return message;
 };
 
-async function request(path: string, init?: RequestInit) {
+type RequestOptions = {
+	suppressAuthEvent?: boolean;
+};
+
+const dispatchAuthExpired = () => {
+	if (typeof window === 'undefined') return;
+	window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+};
+
+async function request(path: string, init?: RequestInit, options?: RequestOptions) {
 	const response = await fetch(path, init);
+	if (response.status === 401) {
+		const message = await parseErrorMessage(response);
+		if (!options?.suppressAuthEvent) {
+			dispatchAuthExpired();
+		}
+		throw new AuthExpiredError(message);
+	}
 	if (!response.ok) {
 		throw new Error(await parseErrorMessage(response));
 	}
 	return response;
 }
 
-async function requestJson<T>(path: string, init?: RequestInit) {
-	const response = await request(path, init);
+async function requestJson<T>(path: string, init?: RequestInit, options?: RequestOptions) {
+	const response = await request(path, init, options);
 	return response.json() as Promise<T>;
+}
+
+export async function getAuthStatus() {
+	return requestJson<AuthStatus>(`${base}/auth/status`, undefined, { suppressAuthEvent: true });
+}
+
+export async function login(input: LoginInput) {
+	await request(
+		`${base}/auth/login`,
+		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) },
+		{ suppressAuthEvent: true }
+	);
+}
+
+export async function logout() {
+	await request(`${base}/auth/logout`, { method: 'POST' }, { suppressAuthEvent: true });
 }
 
 export async function listCookbooks(): Promise<Cookbook[]> {

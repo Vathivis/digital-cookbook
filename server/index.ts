@@ -3,6 +3,7 @@ import { cors } from '@elysiajs/cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Database } from 'bun:sqlite';
 import { z } from 'zod';
 
@@ -78,11 +79,33 @@ const ingredientsQuerySchema = z.object({
 	limit: z.coerce.number().int().positive().max(5000).optional()
 });
 const nameSchema = z.object({ name: nonEmptyString.max(255) });
+const loginSchema = z
+	.object({
+		username: z.string(),
+		password: z.string(),
+		rememberPermanently: z.boolean().optional()
+	})
+	.strict();
 
 type RecipeCreateInput = z.infer<typeof recipeCreateSchema>;
 type RecipeUpdateInput = z.infer<typeof recipeUpdateSchema>;
 
 const PORT = Number(process.env.PORT) || 4000;
+const AUTH_COOKIE_NAME = 'dc_auth';
+const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
+const TEN_YEARS_SECONDS = 10 * 365 * 24 * 60 * 60;
+const isTruthyEnv = (value: string | undefined) => {
+	if (!value) return false;
+	return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+};
+const authEnabled = isTruthyEnv(process.env.AUTH_ENABLED);
+const authUsername = process.env.AUTH_USERNAME?.trim() ?? '';
+const authPassword = process.env.AUTH_PASSWORD ?? '';
+if (authEnabled && (!authUsername || !authPassword)) {
+	throw new Error('AUTH_ENABLED=true requires AUTH_USERNAME and AUTH_PASSWORD to be set');
+}
+const authSigningKey = `${authUsername}:${authPassword}`;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = path.resolve(__dirname, '../data');
 const envDbPath = process.env.COOKBOOK_DB_PATH?.trim();
@@ -287,6 +310,11 @@ const badRequest = (set: { status: number }, message: string) => {
 	return { error: message };
 };
 
+const unauthorized = (set: { status: number }, message = 'unauthorized') => {
+	set.status = 401;
+	return { error: message };
+};
+
 const notFound = (set: { status: number }, message = 'not found') => {
 	set.status = 404;
 	return { error: message };
@@ -304,6 +332,124 @@ const mapRows = (rows: { recipeId: number; name: string }[]) => {
 		grouped[row.recipeId].push(row.name);
 	}
 	return grouped;
+};
+
+type AuthSession = {
+	authenticated: boolean;
+	username?: string;
+};
+
+const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/ingredients'];
+
+const isProtectedApiPath = (pathname: string) =>
+	protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+
+const isCorsPreflightRequest = (request: Request) =>
+	request.method === 'OPTIONS' &&
+	Boolean(request.headers.get('origin')) &&
+	Boolean(request.headers.get('access-control-request-method'));
+
+const parseCookies = (value: string | null) => {
+	const cookies: Record<string, string> = {};
+	if (!value) return cookies;
+	for (const part of value.split(';')) {
+		const trimmed = part.trim();
+		if (!trimmed) continue;
+		const separator = trimmed.indexOf('=');
+		if (separator <= 0) continue;
+		const key = trimmed.slice(0, separator);
+		const rawValue = trimmed.slice(separator + 1);
+		try {
+			cookies[key] = decodeURIComponent(rawValue);
+		} catch {
+			cookies[key] = rawValue;
+		}
+	}
+	return cookies;
+};
+
+const signPayload = (payloadPart: string) => createHmac('sha256', authSigningKey).update(payloadPart).digest('base64url');
+
+const createSessionToken = (expiresAtMs: number) => {
+	const payload = { username: authUsername, exp: expiresAtMs };
+	const payloadPart = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+	const signaturePart = signPayload(payloadPart);
+	return `${payloadPart}.${signaturePart}`;
+};
+
+const parseSessionToken = (token: string) => {
+	const [payloadPart, signaturePart, extra] = token.split('.');
+	if (!payloadPart || !signaturePart || extra) return null;
+	let signatureBuffer: Buffer;
+	let expectedBuffer: Buffer;
+	try {
+		signatureBuffer = Buffer.from(signaturePart, 'base64url');
+		expectedBuffer = Buffer.from(signPayload(payloadPart), 'base64url');
+	} catch {
+		return null;
+	}
+	if (signatureBuffer.length !== expectedBuffer.length) return null;
+	if (!timingSafeEqual(signatureBuffer, expectedBuffer)) return null;
+	let payloadRaw: string;
+	try {
+		payloadRaw = Buffer.from(payloadPart, 'base64url').toString('utf8');
+	} catch {
+		return null;
+	}
+	let payload: { username?: unknown; exp?: unknown };
+	try {
+		payload = JSON.parse(payloadRaw) as { username?: unknown; exp?: unknown };
+	} catch {
+		return null;
+	}
+	if (typeof payload.username !== 'string' || payload.username !== authUsername) return null;
+	if (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp)) return null;
+	if (payload.exp <= Date.now()) return null;
+	return { username: payload.username };
+};
+
+const getAuthSession = (request: Request): AuthSession => {
+	if (!authEnabled) return { authenticated: true };
+	const cookieHeader = request.headers.get('cookie');
+	const token = parseCookies(cookieHeader)[AUTH_COOKIE_NAME];
+	if (!token) return { authenticated: false };
+	const parsed = parseSessionToken(token);
+	if (!parsed) return { authenticated: false };
+	return { authenticated: true, username: parsed.username };
+};
+
+const isSecureRequest = (request: Request) => {
+	const url = new URL(request.url);
+	if (url.protocol === 'https:') return true;
+	const forwardedProto = request.headers.get('x-forwarded-proto');
+	if (!forwardedProto) return false;
+	const proto = forwardedProto.split(',')[0]?.trim().toLowerCase();
+	return proto === 'https';
+};
+
+const buildSessionCookie = (value: string, maxAgeSeconds: number, request: Request) => {
+	const parts = [
+		`${AUTH_COOKIE_NAME}=${encodeURIComponent(value)}`,
+		'Path=/',
+		'HttpOnly',
+		'SameSite=Lax',
+		`Max-Age=${maxAgeSeconds}`
+	];
+	if (isSecureRequest(request)) parts.push('Secure');
+	return parts.join('; ');
+};
+
+const buildLogoutCookie = (request: Request) => {
+	const parts = [
+		`${AUTH_COOKIE_NAME}=`,
+		'Path=/',
+		'HttpOnly',
+		'SameSite=Lax',
+		'Max-Age=0',
+		'Expires=Thu, 01 Jan 1970 00:00:00 GMT'
+	];
+	if (isSecureRequest(request)) parts.push('Secure');
+	return parts.join('; ');
 };
 
 const fetchIngredientNames = (ids: number[]) => {
@@ -422,7 +568,38 @@ export const app = new Elysia({
 	}
 })
 	.use(cors())
+	.onBeforeHandle(({ request, set }) => {
+		if (!authEnabled) return;
+		const pathname = new URL(request.url).pathname;
+		if (!isProtectedApiPath(pathname)) return;
+		if (isCorsPreflightRequest(request)) return;
+		const session = getAuthSession(request);
+		if (!session.authenticated) return unauthorized(set);
+	})
 	.get('/api/health', () => ({ ok: true }))
+	.get('/api/auth/status', ({ request }) => {
+		if (!authEnabled) return { enabled: false, authenticated: true };
+		const session = getAuthSession(request);
+		if (!session.authenticated) return { enabled: true, authenticated: false };
+		return { enabled: true, authenticated: true, username: session.username };
+	})
+	.post('/api/auth/login', ({ body, request, set }) => {
+		if (!authEnabled) return { ok: true };
+		const parsed = loginSchema.safeParse(body ?? {});
+		if (!parsed.success) return validationError(set, parsed.error);
+		const { username, password, rememberPermanently } = parsed.data;
+		if (username !== authUsername || password !== authPassword) {
+			return unauthorized(set, 'invalid credentials');
+		}
+		const maxAgeSeconds = rememberPermanently ? TEN_YEARS_SECONDS : THIRTY_DAYS_SECONDS;
+		const token = createSessionToken(Date.now() + maxAgeSeconds * 1000);
+		set.headers['Set-Cookie'] = buildSessionCookie(token, maxAgeSeconds, request);
+		return { ok: true };
+	})
+	.post('/api/auth/logout', ({ request, set }) => {
+		set.headers['Set-Cookie'] = buildLogoutCookie(request);
+		return { ok: true };
+	})
 	.get('/api/cookbooks', () => {
 		return allStatement<{ id: number; name: string }>('SELECT id, name FROM cookbooks ORDER BY created_at ASC');
 	})

@@ -1,6 +1,6 @@
 # Digital Cookbook
 
-Digital Cookbook is a full-stack recipe manager built with **Bun + React + Vite + Elysia + SQLite**. It’s intentionally scoped for in-home/local use—no auth, multi-user handling, or hosted deployment flows. If you want to run it publicly you’d need to design user management, auth, and more robust persistence before exposing it online.
+Digital Cookbook is a full-stack recipe manager built with **Bun + React + Vite + Elysia + SQLite**. It’s intentionally scoped for in-home/local use with a single shared credential option (no account/user management or hosted deployment workflows). If you want to run it publicly you’d still need stronger security hardening and persistence planning.
 
 ## Tech Stack
 - **Frontend:** React 19, TypeScript, Vite, Tailwind, shadcn.
@@ -72,6 +72,25 @@ bun run dev
 
 Visit `http://localhost:5173` and interact with the UI; `/api/*` calls proxy to `http://localhost:4000` via Vite.
 
+## Optional Auth
+You can enable a simple shared login (one username/password from env, no user database).
+
+```bash
+# .env
+AUTH_ENABLED=true
+AUTH_USERNAME=your-username
+AUTH_PASSWORD=your-password
+```
+
+Behavior:
+- When enabled, unauthenticated users see a login screen in the React app.
+- Login sets an HttpOnly cookie session.
+- Default session lifetime is 30 days.
+- Checking “Remember login permanently” sets a ~10-year cookie.
+- There is no account registration, password reset, or multi-user management.
+
+If `AUTH_ENABLED=true` and either `AUTH_USERNAME` or `AUTH_PASSWORD` is missing, server startup fails.
+
 ## Additional Scripts
 ```bash
 # Lint the project
@@ -114,6 +133,7 @@ Open `http://localhost:4000`.
 Notes:
 - Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
+- Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
 
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:
