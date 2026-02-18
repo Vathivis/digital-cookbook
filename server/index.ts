@@ -344,6 +344,11 @@ const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/
 const isProtectedApiPath = (pathname: string) =>
 	protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
+const isCorsPreflightRequest = (request: Request) =>
+	request.method === 'OPTIONS' &&
+	Boolean(request.headers.get('origin')) &&
+	Boolean(request.headers.get('access-control-request-method'));
+
 const parseCookies = (value: string | null) => {
 	const cookies: Record<string, string> = {};
 	if (!value) return cookies;
@@ -567,6 +572,7 @@ export const app = new Elysia({
 		if (!authEnabled) return;
 		const pathname = new URL(request.url).pathname;
 		if (!isProtectedApiPath(pathname)) return;
+		if (isCorsPreflightRequest(request)) return;
 		const session = getAuthSession(request);
 		if (!session.authenticated) return unauthorized(set);
 	})

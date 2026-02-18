@@ -154,6 +154,28 @@ describe('auth', () => {
 		}
 	});
 
+	test('allows unauthenticated CORS preflight for protected routes', async () => {
+		const server = await loadServer();
+		try {
+			const preflight = await callApi(server.app, '/api/recipes', {
+				method: 'OPTIONS',
+				headers: {
+					Origin: 'http://example.com',
+					'Access-Control-Request-Method': 'POST',
+					'Access-Control-Request-Headers': 'content-type'
+				}
+			});
+
+			expect(preflight.status).not.toBe(401);
+			expect([200, 204]).toContain(preflight.status);
+			expect(preflight.headers.get('access-control-allow-origin')).toBeTruthy();
+			const allowMethods = preflight.headers.get('access-control-allow-methods')?.toUpperCase() ?? '';
+			expect(allowMethods).toContain('POST');
+		} finally {
+			closeServer(server);
+		}
+	});
+
 	test('sets remember-permanent login max-age to ten years', async () => {
 		const server = await loadServer();
 		try {
@@ -168,4 +190,3 @@ describe('auth', () => {
 		}
 	});
 });
-
