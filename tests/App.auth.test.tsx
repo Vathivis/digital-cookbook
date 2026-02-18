@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { Window as HappyWindow } from 'happy-dom';
 import App from '@/App';
 import { AUTH_EXPIRED_EVENT } from '@/lib/api';
@@ -132,7 +132,9 @@ describe('App auth gating', () => {
 			expect(getByText('Recipes')).toBeTruthy();
 		});
 
-		window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+		act(() => {
+			window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+		});
 
 		await waitFor(() => {
 			expect(getByRole('heading', { name: 'Sign in' })).toBeTruthy();
