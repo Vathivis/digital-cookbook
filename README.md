@@ -96,7 +96,7 @@ If `AUTH_ENABLED=true` and either `AUTH_USERNAME` or `AUTH_PASSWORD` is missing,
 # Lint the project
 bun run lint
 
-# Execute tests (Bun test + happy-dom)
+# Execute tests (Bun test + happy-dom, loads .env.test)
 bun run test
 
 # Production build (type-check + Vite build)

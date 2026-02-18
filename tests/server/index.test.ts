@@ -5,7 +5,6 @@ import fs from 'fs';
 const tmpDir = path.resolve(process.cwd(), '.tmp-tests');
 if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 const testDbPath = path.join(tmpDir, `cookbook-${Date.now()}.db`);
-process.env.COOKBOOK_DB_PATH = testDbPath;
 
 // Ensure static serving is enabled for these tests (server checks for dist/index.html on startup).
 const distDir = path.resolve(process.cwd(), 'dist');
@@ -22,7 +21,35 @@ type AppLike = {
 	fetch(request: Request): Promise<Response>;
 };
 
-const { app, database } = await import('../../server/index');
+const withEnv = async <T>(
+	overrides: Record<string, string | undefined>,
+	handler: () => Promise<T>
+) => {
+	const previous = new Map<string, string | undefined>();
+	for (const [key, value] of Object.entries(overrides)) {
+		previous.set(key, process.env[key]);
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	}
+	try {
+		return await handler();
+	} finally {
+		for (const [key, value] of previous.entries()) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	}
+};
+
+const { app, database } = await withEnv(
+	{
+		COOKBOOK_DB_PATH: testDbPath,
+		AUTH_ENABLED: 'false',
+		AUTH_USERNAME: undefined,
+		AUTH_PASSWORD: undefined
+	},
+	() => import(`../../server/index?index=${Date.now()}-${Math.random()}`)
+);
 
 async function callApi(pathname: string, init?: RequestInit) {
 	const headers = new Headers(init?.headers ?? {});
@@ -37,6 +64,12 @@ test('unknown /api routes return a JSON 404 even with static SPA fallback enable
 	const res = await callApi('/api/does-not-exist');
 	expect(res.status).toBe(404);
 	await expect(res.json()).resolves.toEqual({ error: 'not found' });
+});
+
+test('auth is disabled for server index tests', async () => {
+	const status = await callApi('/api/auth/status');
+	expect(status.status).toBe(200);
+	await expect(status.json()).resolves.toEqual({ enabled: false, authenticated: true });
 });
 
 test('static file serving blocks traversal via encoded separators', async () => {
