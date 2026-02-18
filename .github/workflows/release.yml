@@ -18,6 +18,7 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
@@ -31,7 +32,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.9
 
       - name: Resolve release version
         id: release
@@ -100,6 +101,10 @@ jobs:
               echo "Using existing release commit $release_sha for idempotent rerun."
               exit 0
             fi
+
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release skipped: main moved beyond triggering SHA (event: $event_sha, main: $main_tip)."
+            exit 0
           fi
 
           if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
@@ -147,7 +152,7 @@ jobs:
 
           existing_ref_sha="$(git ls-remote --refs origin "refs/tags/${tag_name}" | awk '{print $1}')"
           if [[ -n "$existing_ref_sha" ]]; then
-            existing_commit_sha="$(git ls-remote --refs origin "refs/tags/${tag_name}^{}" | awk '{print $1}')"
+            existing_commit_sha="$(git ls-remote origin "refs/tags/${tag_name}^{}" | awk '{print $1}')"
             if [[ -z "$existing_commit_sha" ]]; then
               existing_commit_sha="$existing_ref_sha"
             fi
