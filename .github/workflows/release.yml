@@ -41,7 +41,7 @@ jobs:
           set -euo pipefail
 
           head_message="$(git log -1 --pretty=%s)"
-          if [[ "$head_message" == *"[skip ci]"* || "$head_message" == chore\(release\):* ]]; then
+          if [[ "$head_message" == chore\(release\):\ bump\ version\ to\ v* ]] && [[ "$head_message" == *"[skip ci]"* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Release skipped for commit message: $head_message"
             exit 0
@@ -107,15 +107,15 @@ jobs:
             exit 0
           fi
 
-          if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-            previous_version="$(read_version_from_ref "HEAD^")"
-
-            if [[ ! "$previous_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-              echo "Previous package.json version must be strict semver X.Y.Z, got: $previous_version"
+          last_release_tag="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
+          if [[ -n "$last_release_tag" ]]; then
+            baseline_version="${last_release_tag#v}"
+            if [[ ! "$baseline_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Latest release tag version must be strict semver X.Y.Z, got: $baseline_version"
               exit 1
             fi
 
-            comparison="$(compare_semver "$current_version" "$previous_version")"
+            comparison="$(compare_semver "$current_version" "$baseline_version")"
 
             if [[ "$comparison" == "0" ]]; then
               IFS='.' read -r major minor patch <<< "$current_version"
@@ -132,9 +132,11 @@ jobs:
 
               release_sha="$(git rev-parse HEAD)"
             elif [[ "$comparison" == "-1" ]]; then
-              echo "Manual version regression: current ${current_version} is lower than previous ${previous_version}"
+              echo "Manual version regression: current ${current_version} is lower than latest release ${baseline_version}"
               exit 1
             fi
+          else
+            echo "No previous release tag found; keeping package version $current_version for initial release."
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"

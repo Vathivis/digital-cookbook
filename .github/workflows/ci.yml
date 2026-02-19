@@ -9,7 +9,13 @@ on:
 
 jobs:
   test:
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message || '', '[skip ci]')
+    if: >-
+      github.event_name != 'push' ||
+      !(
+        github.actor == 'github-actions[bot]' &&
+        startsWith(github.event.head_commit.message || '', 'chore(release): bump version to v') &&
+        contains(github.event.head_commit.message || '', '[skip ci]')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
