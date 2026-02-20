@@ -85,8 +85,13 @@ jobs:
           if [[ "$main_tip" != "$event_sha" ]]; then
             main_tip_message="$(git log -1 --pretty=%s "$main_tip")"
             main_tip_parent="$(git rev-parse "${main_tip}^" 2>/dev/null || true)"
+            main_tip_author="$(git log -1 --pretty=%an "$main_tip")"
+            main_tip_email="$(git log -1 --pretty=%ae "$main_tip")"
 
-            if [[ "$main_tip_parent" == "$event_sha" && "$main_tip_message" == chore\(release\):* ]]; then
+            if [[ "$main_tip_parent" == "$event_sha" ]] \
+              && [[ "$main_tip_message" =~ ^chore\(release\):\ bump\ version\ to\ v[0-9]+\.[0-9]+\.[0-9]+\ \[skip\ ci\]$ ]] \
+              && [[ "$main_tip_author" == "github-actions[bot]" ]] \
+              && [[ "$main_tip_email" == "41898282+github-actions[bot]@users.noreply.github.com" ]]; then
               release_sha="$main_tip"
               release_version="$(read_version_from_ref "$main_tip")"
 
@@ -107,7 +112,7 @@ jobs:
             exit 0
           fi
 
-          last_release_tag="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
+          last_release_tag="$(git describe --tags --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
           if [[ -n "$last_release_tag" ]]; then
             baseline_version="${last_release_tag#v}"
             if [[ ! "$baseline_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
