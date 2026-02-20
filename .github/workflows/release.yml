@@ -112,6 +112,16 @@ jobs:
             exit 0
           fi
 
+          current_release_tag="v${current_version}"
+          current_release_tag_sha="$(git rev-parse --verify "refs/tags/${current_release_tag}^{}" 2>/dev/null || true)"
+          if [[ "$current_release_tag_sha" == "$event_sha" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "release_version=$current_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$event_sha" >> "$GITHUB_OUTPUT"
+            echo "Release tag ${current_release_tag} already points to ${event_sha}; reusing release payload."
+            exit 0
+          fi
+
           last_release_tag="$(git describe --tags --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
           if [[ -n "$last_release_tag" ]]; then
             baseline_version="${last_release_tag#v}"
