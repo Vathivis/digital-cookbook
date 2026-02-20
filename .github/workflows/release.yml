@@ -129,6 +129,16 @@ jobs:
             exit 0
           fi
 
+          existing_event_release_tag="$(git tag --points-at "$event_sha" --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)"
+          if [[ -n "$existing_event_release_tag" ]]; then
+            release_version="${existing_event_release_tag#v}"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$event_sha" >> "$GITHUB_OUTPUT"
+            echo "Release tag ${existing_event_release_tag} already points to ${event_sha}; reusing release payload."
+            exit 0
+          fi
+
           last_release_tag="$(git describe --tags --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
           if [[ -n "$last_release_tag" ]]; then
             baseline_version="${last_release_tag#v}"
@@ -139,23 +149,11 @@ jobs:
 
             comparison="$(compare_semver "$current_version" "$baseline_version")"
 
-            if [[ "$comparison" == "0" ]]; then
-              IFS='.' read -r major minor patch <<< "$current_version"
+            if [[ "$comparison" != "1" ]]; then
+              IFS='.' read -r major minor patch <<< "$baseline_version"
               patch=$((patch + 1))
               release_version="${major}.${minor}.${patch}"
-
-              bun -e "const path='package.json';const pkg=JSON.parse(await Bun.file(path).text());pkg.version=process.argv[1];await Bun.write(path, JSON.stringify(pkg, null, 2) + '\n');" "$release_version"
-
-              git config user.name "github-actions[bot]"
-              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git add package.json
-              git commit -m "chore(release): bump version to v${release_version} [skip ci]"
-              git push origin HEAD:main
-
-              release_sha="$(git rev-parse HEAD)"
-            elif [[ "$comparison" == "-1" ]]; then
-              echo "Manual version regression: current ${current_version} is lower than latest release ${baseline_version}"
-              exit 1
+              echo "Using next patch version ${release_version} because package.json version ${current_version} is not greater than latest release ${baseline_version}."
             fi
           else
             echo "No previous release tag found; keeping package version $current_version for initial release."
