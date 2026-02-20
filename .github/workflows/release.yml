@@ -1,0 +1,238 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Resolve release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          head_message="$(git log -1 --pretty=%s)"
+          head_author="$(git log -1 --pretty=%an)"
+          head_email="$(git log -1 --pretty=%ae)"
+          if [[ "$head_message" =~ ^chore\(release\):\ bump\ version\ to\ v[0-9]+\.[0-9]+\.[0-9]+\ \[skip\ ci\]$ ]] \
+            && [[ "$head_author" == "github-actions[bot]" ]] \
+            && [[ "$head_email" == "41898282+github-actions[bot]@users.noreply.github.com" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release skipped for commit message: $head_message"
+            exit 0
+          fi
+
+          current_version="$(bun -e "const pkg=JSON.parse(await Bun.file('package.json').text()); process.stdout.write(pkg.version ?? '')")"
+          if [[ ! "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json version must be strict semver X.Y.Z, got: $current_version"
+            exit 1
+          fi
+
+          compare_semver() {
+            local left="$1"
+            local right="$2"
+            local l_major l_minor l_patch r_major r_minor r_patch
+            IFS='.' read -r l_major l_minor l_patch <<< "$left"
+            IFS='.' read -r r_major r_minor r_patch <<< "$right"
+
+            if (( l_major > r_major )); then echo 1; return; fi
+            if (( l_major < r_major )); then echo -1; return; fi
+            if (( l_minor > r_minor )); then echo 1; return; fi
+            if (( l_minor < r_minor )); then echo -1; return; fi
+            if (( l_patch > r_patch )); then echo 1; return; fi
+            if (( l_patch < r_patch )); then echo -1; return; fi
+            echo 0
+          }
+
+          read_version_from_ref() {
+            local ref="$1"
+            git show "${ref}:package.json" \
+              | bun -e "let data='';process.stdin.on('data',c=>data+=c);process.stdin.on('end',()=>{const pkg=JSON.parse(data);if(!pkg.version){process.exit(2)}process.stdout.write(pkg.version);});"
+          }
+
+          release_version="$current_version"
+          release_sha="$(git rev-parse HEAD)"
+          event_sha="$release_sha"
+
+          git fetch origin main --tags
+          main_tip="$(git rev-parse origin/main)"
+
+          if [[ "$main_tip" != "$event_sha" ]]; then
+            main_tip_message="$(git log -1 --pretty=%s "$main_tip")"
+            main_tip_parent="$(git rev-parse "${main_tip}^" 2>/dev/null || true)"
+            main_tip_author="$(git log -1 --pretty=%an "$main_tip")"
+            main_tip_email="$(git log -1 --pretty=%ae "$main_tip")"
+
+            if [[ "$main_tip_parent" == "$event_sha" ]] \
+              && [[ "$main_tip_message" =~ ^chore\(release\):\ bump\ version\ to\ v[0-9]+\.[0-9]+\.[0-9]+\ \[skip\ ci\]$ ]] \
+              && [[ "$main_tip_author" == "github-actions[bot]" ]] \
+              && [[ "$main_tip_email" == "41898282+github-actions[bot]@users.noreply.github.com" ]]; then
+              release_sha="$main_tip"
+              release_version="$(read_version_from_ref "$main_tip")"
+
+              if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "Release commit version must be strict semver X.Y.Z, got: $release_version"
+                exit 1
+              fi
+
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+              echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+              echo "Using existing release commit $release_sha for idempotent rerun."
+              exit 0
+            fi
+
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release skipped: main moved beyond triggering SHA (event: $event_sha, main: $main_tip)."
+            exit 0
+          fi
+
+          current_release_tag="v${current_version}"
+          current_release_tag_sha="$(git rev-parse --verify "refs/tags/${current_release_tag}^{}" 2>/dev/null || true)"
+          if [[ "$current_release_tag_sha" == "$event_sha" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "release_version=$current_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$event_sha" >> "$GITHUB_OUTPUT"
+            echo "Release tag ${current_release_tag} already points to ${event_sha}; reusing release payload."
+            exit 0
+          fi
+
+          last_release_tag="$(git describe --tags --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
+          if [[ -n "$last_release_tag" ]]; then
+            baseline_version="${last_release_tag#v}"
+            if [[ ! "$baseline_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Latest release tag version must be strict semver X.Y.Z, got: $baseline_version"
+              exit 1
+            fi
+
+            comparison="$(compare_semver "$current_version" "$baseline_version")"
+
+            if [[ "$comparison" == "0" ]]; then
+              IFS='.' read -r major minor patch <<< "$current_version"
+              patch=$((patch + 1))
+              release_version="${major}.${minor}.${patch}"
+
+              bun -e "const path='package.json';const pkg=JSON.parse(await Bun.file(path).text());pkg.version=process.argv[1];await Bun.write(path, JSON.stringify(pkg, null, 2) + '\n');" "$release_version"
+
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add package.json
+              git commit -m "chore(release): bump version to v${release_version} [skip ci]"
+              git push origin HEAD:main
+
+              release_sha="$(git rev-parse HEAD)"
+            elif [[ "$comparison" == "-1" ]]; then
+              echo "Manual version regression: current ${current_version} is lower than latest release ${baseline_version}"
+              exit 1
+            fi
+          else
+            echo "No previous release tag found; keeping package version $current_version for initial release."
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure release tag
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_name="v${{ steps.release.outputs.release_version }}"
+          release_sha="${{ steps.release.outputs.release_sha }}"
+
+          existing_ref_sha="$(git ls-remote --refs origin "refs/tags/${tag_name}" | awk '{print $1}')"
+          if [[ -n "$existing_ref_sha" ]]; then
+            existing_commit_sha="$(git ls-remote origin "refs/tags/${tag_name}^{}" | awk '{print $1}')"
+            if [[ -z "$existing_commit_sha" ]]; then
+              existing_commit_sha="$existing_ref_sha"
+            fi
+
+            if [[ "$existing_commit_sha" != "$release_sha" ]]; then
+              echo "Tag ${tag_name} already exists on ${existing_commit_sha}, expected ${release_sha}"
+              exit 1
+            fi
+
+            echo "Tag ${tag_name} already exists on ${release_sha}; continuing."
+            exit 0
+          fi
+
+          git tag "${tag_name}" "${release_sha}"
+          git push origin "refs/tags/${tag_name}"
+
+      - name: Check out release commit
+        if: steps.release.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout --detach "${{ steps.release.outputs.release_sha }}"
+
+      - name: Set up QEMU
+        if: steps.release.outputs.skip != 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.release.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.release.outputs.skip != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        if: steps.release.outputs.skip != 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/digital-cookbook
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+            type=raw,value=v${{ steps.release.outputs.release_version }}
+
+      - name: Build and push
+        if: steps.release.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
