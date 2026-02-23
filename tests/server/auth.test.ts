@@ -176,6 +176,21 @@ describe('auth', () => {
 		}
 	});
 
+	test('keeps health endpoints publicly accessible when auth is enabled', async () => {
+		const server = await loadServer();
+		try {
+			const rootHealth = await callApi(server.app, '/health');
+			expect(rootHealth.status).toBe(200);
+			await expect(rootHealth.json()).resolves.toEqual({ ok: true });
+
+			const apiHealth = await callApi(server.app, '/api/health');
+			expect(apiHealth.status).toBe(200);
+			await expect(apiHealth.json()).resolves.toEqual({ ok: true });
+		} finally {
+			closeServer(server);
+		}
+	});
+
 	test('sets remember-permanent login max-age to ten years', async () => {
 		const server = await loadServer();
 		try {

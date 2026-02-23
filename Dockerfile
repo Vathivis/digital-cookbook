@@ -33,4 +33,6 @@ COPY package.json bun.lockb bun.lock ./
 
 RUN mkdir -p /app/data
 EXPOSE 4000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["bun", "-e", "const port = process.env.PORT || '4000'; const url = 'http://127.0.0.1:' + port + '/health'; const res = await fetch(url); if (!res.ok) throw new Error('Health check failed with status ' + res.status); const payload = await res.json(); if (!payload?.ok) throw new Error('Health payload not ok');"]
 CMD ["bun", "server/index.ts"]
