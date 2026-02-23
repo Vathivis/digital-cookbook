@@ -134,6 +134,7 @@ Notes:
 - Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
 - Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
+- Image includes a Docker `HEALTHCHECK` that probes `GET /health`, so `docker ps` reports `healthy`/`unhealthy`.
 
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:

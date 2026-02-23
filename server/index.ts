@@ -576,6 +576,7 @@ export const app = new Elysia({
 		const session = getAuthSession(request);
 		if (!session.authenticated) return unauthorized(set);
 	})
+	.get('/health', () => ({ ok: true }))
 	.get('/api/health', () => ({ ok: true }))
 	.get('/api/auth/status', ({ request }) => {
 		if (!authEnabled) return { enabled: false, authenticated: true };
