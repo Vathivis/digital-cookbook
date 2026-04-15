@@ -1,0 +1,25 @@
+services:
+  digital-cookbook:
+    build:
+      context: .
+    image: digital-cookbook:local
+    ports:
+      - "${PORT:-4000}:4000"
+    environment:
+      PORT: 4000
+      HOST: 0.0.0.0
+      COOKBOOK_DB_PATH: /app/data/cookbook.db
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_USERNAME: ${AUTH_USERNAME:-}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+    volumes:
+      - cookbook_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:$${PORT:-4000}/health || exit 1"]
+      interval: ${HEALTHCHECK_INTERVAL:-2m}
+      timeout: ${HEALTHCHECK_TIMEOUT:-3s}
+      start_period: ${HEALTHCHECK_START_PERIOD:-20s}
+      retries: ${HEALTHCHECK_RETRIES:-3}
+
+volumes:
+  cookbook_data:
