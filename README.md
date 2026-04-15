@@ -126,6 +126,9 @@ docker build -t digital-cookbook:local .
 
 # Run (persists SQLite DB in a named volume)
 docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data digital-cookbook:local
+
+# Or use Compose (health check cadence configurable via .env / shell env)
+docker compose up --build -d
 ```
 
 Open `http://localhost:4000`.
@@ -134,7 +137,9 @@ Notes:
 - Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
 - Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
-- Image includes a Docker `HEALTHCHECK` that probes `GET /health`, so `docker ps` reports `healthy`/`unhealthy`.
+- The image includes a lightweight Docker `HEALTHCHECK` that does a simple local HTTP probe against `GET /health`.
+- `compose.yaml` exposes the cadence via `HEALTHCHECK_INTERVAL`, `HEALTHCHECK_TIMEOUT`, `HEALTHCHECK_START_PERIOD`, and `HEALTHCHECK_RETRIES`.
+- If you want no health checks in Compose, override the service with `healthcheck: { disable: true }`.
 
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:
