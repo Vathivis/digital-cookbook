@@ -34,5 +34,5 @@ COPY package.json bun.lockb bun.lock ./
 RUN mkdir -p /app/data
 EXPOSE 4000
 HEALTHCHECK --interval=2m --timeout=3s --start-period=20s --retries=3 \
-  CMD wget -q -T 2 -O /dev/null "http://127.0.0.1:${PORT}/health" || exit 1
+  CMD port="${PORT:-4000}"; case "$port" in ''|*[!0-9]*) port=4000 ;; esac; [ "$port" -gt 0 ] 2>/dev/null || port=4000; wget -q -T 2 -O /dev/null "http://127.0.0.1:${port}/health" || exit 1
 CMD ["bun", "server/index.ts"]

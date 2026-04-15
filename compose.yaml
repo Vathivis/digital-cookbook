@@ -15,7 +15,11 @@ services:
     volumes:
       - cookbook_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:$${PORT:-4000}/health || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "port=\"$${PORT:-4000}\"; case \"$${port}\" in ''|*[!0-9]*) port=4000 ;; esac; [ \"$${port}\" -gt 0 ] 2>/dev/null || port=4000; wget -q -T 2 -O /dev/null \"http://127.0.0.1:$${port}/health\" || exit 1"
+        ]
       interval: ${HEALTHCHECK_INTERVAL:-2m}
       timeout: ${HEALTHCHECK_TIMEOUT:-3s}
       start_period: ${HEALTHCHECK_START_PERIOD:-20s}
