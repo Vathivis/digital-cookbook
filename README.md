@@ -148,7 +148,7 @@ docker compose up --build -d
 
 `compose.yml` wires these env vars into the service healthcheck:
 - `HEALTHCHECK_INTERVAL`
-- `HEALTHCHECK_TIMEOUT` (used for both the Docker healthcheck timeout and the HTTP probe timeout)
+- `HEALTHCHECK_TIMEOUT`
 - `HEALTHCHECK_START_PERIOD`
 - `HEALTHCHECK_RETRIES`
 
