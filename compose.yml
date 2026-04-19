@@ -12,6 +12,7 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       AUTH_USERNAME: ${AUTH_USERNAME:-}
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
+      HEALTHCHECK_TIMEOUT: ${HEALTHCHECK_TIMEOUT:-3s}
     volumes:
       - cookbook_data:/app/data
     restart: unless-stopped
@@ -23,7 +24,7 @@ services:
           timeout="$${HEALTHCHECK_TIMEOUT:-3s}";
           case "$$port" in ''|*[!0-9]*) port=4000 ;; esac;
           [ "$$port" -gt 0 ] 2>/dev/null || port=4000;
-          http_timeout=0;
+          http_timeout_ms=0;
           valid_timeout=1;
           remaining="$$timeout";
           case "$$remaining" in *[!0-9smh]*) valid_timeout=0 ;; esac;
@@ -33,23 +34,37 @@ services:
             rest="$${remaining#$$number}";
             if [ -z "$$rest" ]; then
               if [ "$$remaining" = "$$timeout" ]; then
-                http_timeout=$$((http_timeout + number));
+                http_timeout_ms=$$((http_timeout_ms + number * 1000));
               else
                 valid_timeout=0;
               fi;
               break;
             fi;
-            unit="$${rest%"$${rest#?}"}";
-            remaining="$${rest#?}";
-            case "$$unit" in
-              s) http_timeout=$$((http_timeout + number)) ;;
-              m) http_timeout=$$((http_timeout + number * 60)) ;;
-              h) http_timeout=$$((http_timeout + number * 3600)) ;;
-              *) valid_timeout=0 ;;
+            case "$$rest" in
+              ms*)
+                remaining="$${rest#ms}";
+                http_timeout_ms=$$((http_timeout_ms + number))
+                ;;
+              s*)
+                remaining="$${rest#?}";
+                http_timeout_ms=$$((http_timeout_ms + number * 1000))
+                ;;
+              m*)
+                remaining="$${rest#?}";
+                http_timeout_ms=$$((http_timeout_ms + number * 60000))
+                ;;
+              h*)
+                remaining="$${rest#?}";
+                http_timeout_ms=$$((http_timeout_ms + number * 3600000))
+                ;;
+              *)
+                valid_timeout=0
+                ;;
             esac;
           done;
-          [ "$$valid_timeout" -eq 1 ] || http_timeout=3;
-          [ "$$http_timeout" -gt 0 ] 2>/dev/null || http_timeout=3;
+          [ "$$valid_timeout" -eq 1 ] || http_timeout_ms=3000;
+          [ "$$http_timeout_ms" -gt 0 ] 2>/dev/null || http_timeout_ms=3000;
+          http_timeout=$$(((http_timeout_ms + 999) / 1000));
           wget -q -T "$$http_timeout" -O /dev/null "http://127.0.0.1:$${port}/health" || exit 1
       interval: ${HEALTHCHECK_INTERVAL:-2m}
       timeout: ${HEALTHCHECK_TIMEOUT:-3s}
