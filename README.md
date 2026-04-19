@@ -126,6 +126,9 @@ docker build -t digital-cookbook:local .
 
 # Run (persists SQLite DB in a named volume)
 docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data digital-cookbook:local
+
+# Or use Compose (health check cadence configurable via .env / shell env)
+docker compose up --build -d
 ```
 
 Open `http://localhost:4000`.
