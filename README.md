@@ -137,9 +137,28 @@ Notes:
 - Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
 - Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
-- The image includes a lightweight Docker `HEALTHCHECK` that does a simple local HTTP probe against `GET /health`.
-- `compose.yaml` exposes the cadence via `HEALTHCHECK_INTERVAL`, `HEALTHCHECK_TIMEOUT`, `HEALTHCHECK_START_PERIOD`, and `HEALTHCHECK_RETRIES`.
-- If you want no health checks in Compose, override the service with `healthcheck: { disable: true }`.
+- Image includes a Docker `HEALTHCHECK` that probes `GET /health`, so `docker ps` reports `healthy`/`unhealthy`.
+- The image-level `HEALTHCHECK` timings are baked into the image. Runtime env vars such as `HEALTHCHECK_INTERVAL` do not affect `docker run` by themselves.
+
+If you want healthcheck timings to come from `.env`, use the provided `compose.yml`:
+
+```bash
+docker compose up --build -d
+```
+
+`compose.yml` wires these env vars into the service healthcheck:
+- `HEALTHCHECK_INTERVAL`
+- `HEALTHCHECK_TIMEOUT`
+- `HEALTHCHECK_START_PERIOD`
+- `HEALTHCHECK_RETRIES`
+
+With Compose, the container still probes `GET /health`, and the app still uses:
+- `PORT`
+- `HOST`
+- `COOKBOOK_DB_PATH`
+- `AUTH_ENABLED`
+- `AUTH_USERNAME`
+- `AUTH_PASSWORD`
 
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:
