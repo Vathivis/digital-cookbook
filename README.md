@@ -138,19 +138,15 @@ Notes:
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
 - Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
 - Image includes a Docker `HEALTHCHECK` that probes `GET /health`, so `docker ps` reports `healthy`/`unhealthy`.
-- The image-level `HEALTHCHECK` timings are baked into the image. Runtime env vars such as `HEALTHCHECK_INTERVAL` do not affect `docker run` by themselves.
+- The image-level `HEALTHCHECK` timings are baked into the image.
 
-If you want healthcheck timings to come from `.env`, use the provided `compose.yml`:
+If you want to tweak the container policy in Compose, use the provided `compose.yml`:
 
 ```bash
 docker compose up --build -d
 ```
 
-`compose.yml` wires these env vars into the service healthcheck:
-- `HEALTHCHECK_INTERVAL`
-- `HEALTHCHECK_TIMEOUT`
-- `HEALTHCHECK_START_PERIOD`
-- `HEALTHCHECK_RETRIES`
+`compose.yml` keeps the same `/health` probe in a plain `wget`-based healthcheck block that you can edit directly.
 
 With Compose, the container still probes `GET /health`, and the app still uses:
 - `PORT`
