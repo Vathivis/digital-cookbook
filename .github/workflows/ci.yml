@@ -142,6 +142,7 @@ jobs:
               fi
 
               echo "skip=false" >> "$GITHUB_OUTPUT"
+              echo "current_version=$release_version" >> "$GITHUB_OUTPUT"
               echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
               echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
               echo "Using existing release commit $release_sha for idempotent rerun."
@@ -157,6 +158,7 @@ jobs:
           current_release_tag_sha="$(git rev-parse --verify "refs/tags/${current_release_tag}^{}" 2>/dev/null || true)"
           if [[ "$current_release_tag_sha" == "$event_sha" ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
             echo "release_version=$current_version" >> "$GITHUB_OUTPUT"
             echo "release_sha=$event_sha" >> "$GITHUB_OUTPUT"
             echo "Release tag ${current_release_tag} already points to ${event_sha}; reusing release payload."
@@ -167,6 +169,7 @@ jobs:
           if [[ -n "$existing_event_release_tag" ]]; then
             release_version="${existing_event_release_tag#v}"
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "current_version=$release_version" >> "$GITHUB_OUTPUT"
             echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
             echo "release_sha=$event_sha" >> "$GITHUB_OUTPUT"
             echo "Release tag ${existing_event_release_tag} already points to ${event_sha}; reusing release payload."
@@ -194,8 +197,47 @@ jobs:
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "current_version=$current_version" >> "$GITHUB_OUTPUT"
           echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Persist release version
+        if: steps.release.outputs.skip != 'true'
+        id: persist
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_version="${{ steps.release.outputs.current_version }}"
+          release_version="${{ steps.release.outputs.release_version }}"
+          release_sha="${{ steps.release.outputs.release_sha }}"
+
+          if [[ "$release_version" == "$current_version" ]]; then
+            echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+            echo "package.json already matches release version ${release_version}; no release commit needed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          bun -e 'const version=process.argv[2]; const path="package.json"; const pkg=JSON.parse(await Bun.file(path).text()); pkg.version=version; await Bun.write(path, JSON.stringify(pkg, null, 2) + "\n");' "$release_version"
+
+          git add package.json
+
+          if git diff --cached --quiet; then
+            echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+            echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+            echo "package.json update produced no diff; continuing without release commit."
+            exit 0
+          fi
+
+          git commit -m "chore(release): bump version to v${release_version} [skip ci]"
+          git push origin HEAD:main
+
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Ensure release tag
         if: steps.release.outputs.skip != 'true'
@@ -203,8 +245,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag_name="v${{ steps.release.outputs.release_version }}"
-          release_sha="${{ steps.release.outputs.release_sha }}"
+          tag_name="v${{ steps.persist.outputs.release_version }}"
+          release_sha="${{ steps.persist.outputs.release_sha }}"
 
           existing_ref_sha="$(git ls-remote --refs origin "refs/tags/${tag_name}" | awk '{print $1}')"
           if [[ -n "$existing_ref_sha" ]]; then
@@ -230,7 +272,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git checkout --detach "${{ steps.release.outputs.release_sha }}"
+          git checkout --detach "${{ steps.persist.outputs.release_sha }}"
 
       - name: Set up QEMU
         if: steps.release.outputs.skip != 'true'
@@ -257,7 +299,7 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,format=short
-            type=raw,value=v${{ steps.release.outputs.release_version }}
+            type=raw,value=v${{ steps.persist.outputs.release_version }}
 
       - name: Build and push
         if: steps.release.outputs.skip != 'true'
@@ -280,8 +322,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag_name="v${{ steps.release.outputs.release_version }}"
-          release_sha="${{ steps.release.outputs.release_sha }}"
+          tag_name="v${{ steps.persist.outputs.release_version }}"
+          release_sha="${{ steps.persist.outputs.release_sha }}"
 
           if gh release view "$tag_name" >/dev/null 2>&1; then
             echo "Release ${tag_name} already exists; continuing."
