@@ -13,6 +13,7 @@ interface Props {
 
 export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 	const [cookbooks, setCookbooks] = useState<{ id: number; name: string }[]>([]);
+	const [loaded, setLoaded] = useState(false);
 	const [adding, setAdding] = useState(false);
 	const [name, setName] = useState('');
 	const [renameId, setRenameId] = useState<number | null>(null);
@@ -23,13 +24,15 @@ export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 	useEffect(() => {
 		(async () => {
 			setCookbooks(await listCookbooks());
+			setLoaded(true);
 		})();
 	}, []);
 
 	useEffect(() => {
+		if (!loaded) return;
 		const next = deriveNextCookbookId(activeCookbookId, cookbooks);
 		if (next !== activeCookbookId) onSelect(next);
-	}, [cookbooks, activeCookbookId, onSelect]);
+	}, [loaded, cookbooks, activeCookbookId, onSelect]);
 
 	const submit = async () => {
 		if (!name.trim()) return;

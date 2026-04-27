@@ -13,6 +13,7 @@ Object.assign(globalThis, {
 	HTMLElement: globalWindow.HTMLElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
 	DocumentFragment: globalWindow.DocumentFragment,
+	localStorage: globalWindow.localStorage,
 	Node: globalWindow.Node,
 });
 
@@ -36,6 +37,7 @@ const json = (body: unknown, status = 200) =>
 afterEach(() => {
 	cleanup();
 	mock.restore();
+	localStorage.clear();
 });
 
 describe('App auth gating', () => {
@@ -62,6 +64,36 @@ describe('App auth gating', () => {
 		});
 		await new Promise((resolve) => setTimeout(resolve, 350));
 		expect(recipesFetchCount).toBe(1);
+	});
+
+	test('restores the last selected cookbook on initial load', async () => {
+		localStorage.setItem('digital-cookbook.activeCookbookId', '2');
+		let restoredCookbookFetchCount = 0;
+		let firstCookbookFetchCount = 0;
+		globalThis.fetch = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/auth/status')) return Promise.resolve(json({ enabled: false, authenticated: true }));
+			if (url.endsWith('/api/cookbooks')) return Promise.resolve(json([{ id: 1, name: 'Demo' }, { id: 2, name: 'test' }]));
+			if (url.includes('/api/recipes?cookbookId=2')) {
+				restoredCookbookFetchCount += 1;
+				return Promise.resolve(json([]));
+			}
+			if (url.includes('/api/recipes?cookbookId=1')) {
+				firstCookbookFetchCount += 1;
+				return Promise.resolve(json([]));
+			}
+			return Promise.resolve(json({ error: 'not found' }, 404));
+		}) as typeof fetch;
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(restoredCookbookFetchCount).toBe(1);
+		});
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		});
+		expect(firstCookbookFetchCount).toBe(0);
 	});
 
 	test('shows login screen when auth status request fails', async () => {

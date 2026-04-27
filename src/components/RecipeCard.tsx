@@ -407,45 +407,31 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		onChange();
 	};
 	const pushLike = useCallback((name: string) => {
-		let changed = false;
-		let snapshot: string[] | null = null;
+		const normalized = normalizeName(name);
 		setLikes((prev) => {
-			if (prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
-				snapshot = prev;
-				return prev;
-			}
-			changed = true;
-			snapshot = [...prev, name];
-			return snapshot;
+			if (prev.some((existing) => normalizeName(existing) === normalized)) return prev;
+			return [...prev, name];
 		});
-		if (changed && snapshot) {
-			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
-		}
-		return changed;
+		setFull((detail) => {
+			if (!detail) return detail;
+			if ((detail.likes || []).some((existing) => normalizeName(existing) === normalized)) return detail;
+			return { ...detail, likes: [...(detail.likes || []), name] };
+		});
 	}, []);
 	const pullLike = useCallback((name: string) => {
-		let changed = false;
-		let snapshot: string[] | null = null;
+		const normalized = normalizeName(name);
 		setLikes((prev) => {
-			if (!prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
-				snapshot = prev;
-				return prev;
-			}
-			changed = true;
-			snapshot = prev.filter((entry) => normalizeName(entry) !== normalizeName(name));
-			return snapshot;
+			if (!prev.some((existing) => normalizeName(existing) === normalized)) return prev;
+			return prev.filter((entry) => normalizeName(entry) !== normalized);
 		});
-		if (changed && snapshot) {
-			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
-		}
+		setFull((detail) => (detail ? { ...detail, likes: (detail.likes || []).filter((entry) => normalizeName(entry) !== normalized) } : detail));
 	}, []);
 	const persistLike = useCallback(
 		async (name: string, targetId?: number) => {
 			const normalized = name.trim();
 			if (!normalized) return;
 			const target = targetId ?? (full?.id ?? recipe.id);
-			const added = pushLike(normalized);
-			if (!added) return;
+			pushLike(normalized);
 			try {
 				await addLike(target, normalized);
 				onChange();
@@ -481,8 +467,8 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			pushLike(name);
 		}
 	};
-	const handleQuickLikeSubmit = async () => {
-		const name = quickLikeValue.trim();
+	const handleQuickLikeSubmit = async (nameOverride?: string) => {
+		const name = (nameOverride ?? quickLikeValue).trim();
 		if (!name) return;
 		setQuickLikeActive(false);
 		setQuickLikeValue('');
@@ -753,15 +739,16 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							<form
 								onSubmit={(e) => {
 									e.preventDefault();
-									handleQuickLikeSubmit();
+									const formData = new FormData(e.currentTarget);
+									const name = String(formData.get('name') ?? '');
+									void handleQuickLikeSubmit(name);
 								}}
 								onClick={(e) => e.stopPropagation()}
 								className="flex flex-1 items-center gap-1"
 							>
 								<Input
 									ref={quickLikeInputRef}
-									value={quickLikeValue}
-									onChange={(e) => setQuickLikeValue(e.target.value)}
+									name="name"
 									onKeyDown={(e) => {
 										if (e.key === 'Escape') {
 											e.preventDefault();
@@ -771,7 +758,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 									placeholder="Name who likes this"
 									className="h-7 flex-1 min-w-0 text-[11px] px-2"
 								/>
-								<Button type="submit" size="sm" className="h-7 px-2 text-[11px]" disabled={!quickLikeValue.trim()}>
+								<Button type="submit" size="sm" className="h-7 px-2 text-[11px]">
 									Add
 								</Button>
 								<Button
@@ -814,16 +801,16 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
 					>
 						{!editing && (
-							<div className="relative">
+							<div className="relative overflow-hidden rounded-lg border border-border/70 bg-muted">
 								{full?.photo ? (
 									<img
 										src={full.photo}
 										alt={full.title}
-										className="w-full max-h-80 object-cover rounded"
+										className="h-48 w-full object-cover sm:h-56"
 										onLoad={() => updateScrollFade()}
 									/>
 								) : (
-									<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
+									<div className="flex h-48 w-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground sm:h-56">No photo</div>
 								)}
 								{likes.length > 0 && (
 									<div className="absolute top-2 right-2 z-10 flex flex-wrap gap-1.5 max-w-[70%] justify-end pointer-events-none">
@@ -847,10 +834,12 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							</div>
 						)}
 
-						{!editing && <div className="mt-3 text-sm text-muted-foreground">{full?.description ?? recipe.description}</div>}
+						{!editing && (full?.description ?? recipe.description) && (
+							<div className="mt-4 text-sm leading-6 text-muted-foreground">{full?.description ?? recipe.description}</div>
+						)}
 
 						{full && !editing && (
-							<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+							<div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-2">
 								<div>
 									<div className="flex items-center justify-between mb-2">
 										<h4 className="font-semibold">Ingredients</h4>

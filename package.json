@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "bun --env-file=.env.test test",
     "server": "bun server/index.ts",
-    "dev:full": "concurrently \"bun run server\" \"vite\""
+    "server:dev": "bun --env-file=.env.test server/index.ts",
+    "dev:full": "concurrently \"bun run server:dev\" \"vite\""
   },
   "dependencies": {
     "@elysiajs/cors": "^1.4.1",

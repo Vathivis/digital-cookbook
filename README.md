@@ -60,10 +60,10 @@ Recipes track likes and usage counts, with optimistic UI updates to keep interac
 # Install dependencies
 bun install
 
-# Start API + Vite dev servers concurrently (API:4000, Vite:5173)
+# Start API + Vite dev servers concurrently (API:4000, Vite:5173; auth disabled)
 bun run dev:full
 
-# Run only the API server
+# Run only the API server using your local env
 bun run server
 
 # Run only the Vite dev server
