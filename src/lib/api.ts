@@ -15,7 +15,8 @@ export type RecipeInput = {
 	ingredients: IngredientInput[];
 	steps: string[];
 	notes?: string;
-	photoDataUrl?: string;
+	photoDataUrl?: string | null;
+	photoThumbnailDataUrl?: string | null;
 	tags?: string[];
 };
 

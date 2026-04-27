@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
-import { loadImageDataUrl } from '../lib/image';
+import { loadImageDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus, ImagePlus } from 'lucide-react';
@@ -220,6 +220,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		return () => document.removeEventListener('pointerdown', handlePointerDown);
 	}, [addingTag, tagSuggestionsNode]);
 	const [photo, setPhoto] = useState<string | undefined>();
+	const [photoThumbnail, setPhotoThumbnail] = useState<string | undefined>();
 	const [photoDrag, setPhotoDrag] = useState(false);
 	const photoInputRef = useRef<HTMLInputElement | null>(null);
 	const [quickLikeActive, setQuickLikeActive] = useState(false);
@@ -368,6 +369,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			const detail = await fetchAndApplyDetail(recipe, recipe.id);
 			setEditing(false);
 			setPhoto(undefined);
+			setPhotoThumbnail(undefined);
 			setViewServings(detail.servings ?? 1);
 		} catch (error) {
 			console.error('Failed to load recipe details', error);
@@ -401,8 +403,11 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			steps: esteps.map(s => s.text),
 			notes: enotes,
 			photoDataUrl: photo,
+			photoThumbnailDataUrl: photo ? photoThumbnail : undefined,
 		});
 		await fetchAndApplyDetail(full, full.id);
+		setPhoto(undefined);
+		setPhotoThumbnail(undefined);
 		setEditing(false);
 		onChange();
 	};
@@ -481,10 +486,11 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const taskId = ++imageTaskRef.current;
-		loadImageDataUrl(file)
-			.then((dataUrl) => {
+		Promise.all([loadImageDataUrl(file), loadImageDataUrl(file, THUMBNAIL_MAX_DIMENSION)])
+			.then(([dataUrl, thumbnailDataUrl]) => {
 				if (imageTaskRef.current === taskId) {
 					setPhoto(dataUrl);
+					setPhotoThumbnail(thumbnailDataUrl);
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
@@ -1184,7 +1190,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							) : (
 								<>
 									<Button onClick={saveEdit}>Save</Button>
-									<Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+									<Button variant="outline" onClick={() => { setEditing(false); setPhoto(undefined); setPhotoThumbnail(undefined); }}>Cancel</Button>
 									<Button variant="destructive" className="ml-auto" type="button" onClick={async () => {
 										if (!full) return;
 										const sure = confirm(`Delete recipe "${full.title}"? This cannot be undone.`);

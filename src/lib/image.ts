@@ -1,4 +1,5 @@
 const MAX_DIMENSION = 1600;
+export const THUMBNAIL_MAX_DIMENSION = 480;
 
 const readFileAsDataUrl = (file: File) =>
 	new Promise<string>((resolve, reject) => {

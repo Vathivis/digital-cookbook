@@ -13,6 +13,7 @@ import { Sun, Moon } from 'lucide-react';
 import { useFlipList } from './hooks/useFlipList';
 import { useAnimatedItems } from './hooks/useAnimatedItems';
 import { filterAndSortRecipes, type SortMode, type FilterMode } from './lib/filters';
+import { shouldApplyRecipeReload } from './lib/reloadGuards';
 
 const ACTIVE_COOKBOOK_STORAGE_KEY = 'digital-cookbook.activeCookbookId';
 const ACTIVE_COOKBOOK_QUERY_KEY = 'cookbookId';
@@ -118,16 +119,31 @@ function App() {
 		return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
 	}, []);
 	const queryRef = useRef(query);
+	const activeCookbookRef = useRef(activeCookbook);
+	const reloadRequestRef = useRef(0);
 	useEffect(() => {
 		queryRef.current = query;
 	}, [query]);
+	activeCookbookRef.current = activeCookbook;
 	const reload = useCallback(
 		(overrideQuery?: string) => {
-			if (!activeCookbook) return Promise.resolve();
+			const cookbookId = activeCookbook;
+			if (!cookbookId) return Promise.resolve();
 			if (authStatus?.enabled && !authStatus.authenticated) return Promise.resolve();
 			const q = (overrideQuery ?? queryRef.current).trim();
+			const requestId = ++reloadRequestRef.current;
 			const run = async () => {
-				const data = q ? await searchRecipes(activeCookbook, q) : await getRecipes(activeCookbook);
+				const data = q ? await searchRecipes(cookbookId, q) : await getRecipes(cookbookId);
+				if (!shouldApplyRecipeReload({
+					requestId,
+					latestRequestId: reloadRequestRef.current,
+					cookbookId,
+					activeCookbookId: activeCookbookRef.current,
+					query: q,
+					currentQuery: queryRef.current
+				})) {
+					return;
+				}
 				setAllRecipes(data);
 			};
 			return run();

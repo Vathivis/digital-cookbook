@@ -151,7 +151,8 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 			ingredients: [],
 			steps: [],
 			notes: '',
-			photoDataUrl: 'data:image/png;base64,AAA'
+			photoDataUrl: 'data:image/png;base64,AAA',
+			photoThumbnailDataUrl: 'data:image/jpeg;base64,thumb'
 		})
 	});
 	expect(createRes.status).toBe(200);
@@ -162,6 +163,16 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	expect(detailBefore.status).toBe(200);
 	const beforePayload = await detailBefore.json();
 	expect(beforePayload.photo).toBe('data:image/png;base64,AAA');
+
+	const listBefore = await callApi('/api/recipes?cookbookId=1');
+	expect(listBefore.status).toBe(200);
+	const listPayload = (await listBefore.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listPayload.find((recipe) => recipe.id === id)?.photo).toBe('data:image/jpeg;base64,thumb');
+
+	const searchBefore = await callApi('/api/recipes/search?cookbookId=1&q=Photo');
+	expect(searchBefore.status).toBe(200);
+	const searchPayload = (await searchBefore.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchPayload.find((recipe) => recipe.id === id)?.photo).toBe('data:image/jpeg;base64,thumb');
 
 	const patchClear = await callApi(`/api/recipes/${id}`, {
 		method: 'PATCH',

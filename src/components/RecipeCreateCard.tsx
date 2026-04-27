@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { createRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
-import { loadImageDataUrl } from '../lib/image';
+import { loadImageDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -117,6 +117,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const [steps, setSteps] = useState<EditableStep[]>([createBlankStep()]);
 	const [notes, setNotes] = useState('');
 	const [photo, setPhoto] = useState<string | undefined>();
+	const [photoThumbnail, setPhotoThumbnail] = useState<string | undefined>();
 	const imageTaskRef = useRef(0);
 	const [tagList, setTagList] = useState<string[]>([]);
 	const [addingTag, setAddingTag] = useState(false);
@@ -189,6 +190,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 		setSteps([createBlankStep()]);
 		setNotes('');
 		setPhoto(undefined);
+		setPhotoThumbnail(undefined);
 		setTagList([]);
 		setTagValue('');
 		setAddingTag(false);
@@ -214,6 +216,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 		steps: cleanedSteps,
 		notes: notes.trim(),
 		photoDataUrl: photo,
+		photoThumbnailDataUrl: photoThumbnail,
 		tags: tagList
 	});
 	resetForm();
@@ -223,10 +226,11 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const taskId = ++imageTaskRef.current;
-		loadImageDataUrl(file)
-			.then((dataUrl) => {
+		Promise.all([loadImageDataUrl(file), loadImageDataUrl(file, THUMBNAIL_MAX_DIMENSION)])
+			.then(([dataUrl, thumbnailDataUrl]) => {
 				if (imageTaskRef.current === taskId) {
 					setPhoto(dataUrl);
+					setPhotoThumbnail(thumbnailDataUrl);
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
