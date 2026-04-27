@@ -176,7 +176,7 @@ jobs:
             exit 0
           fi
 
-          last_release_tag="$(git describe --tags --first-parent --match 'v[0-9]*.[0-9]*.[0-9]*' --abbrev=0 "$event_sha" 2>/dev/null || true)"
+          last_release_tag="$(git tag --merged "$event_sha" --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)"
           if [[ -n "$last_release_tag" ]]; then
             baseline_version="${last_release_tag#v}"
             if [[ ! "$baseline_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
