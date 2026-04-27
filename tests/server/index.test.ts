@@ -44,6 +44,7 @@ const withEnv = async <T>(
 const { app, database } = await withEnv(
 	{
 		COOKBOOK_DB_PATH: testDbPath,
+		COOKBOOK_BASE_PATH: '/cookbook/',
 		AUTH_ENABLED: 'false',
 		AUTH_USERNAME: undefined,
 		AUTH_PASSWORD: undefined
@@ -109,13 +110,25 @@ test('static file serving returns browser-safe content types', async () => {
 		expect(jsRes.status).toBe(200);
 		expect(jsRes.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8');
 
+		const prefixedJsRes = await callApi('/cookbook/assets/static-test.js');
+		expect(prefixedJsRes.status).toBe(200);
+		expect(prefixedJsRes.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8');
+
 		const svgRes = await callApi('/favicon.svg');
 		expect(svgRes.status).toBe(200);
 		expect(svgRes.headers.get('Content-Type')).toBe('image/svg+xml');
 
+		const prefixedSvgRes = await callApi('/cookbook/favicon.svg');
+		expect(prefixedSvgRes.status).toBe(200);
+		expect(prefixedSvgRes.headers.get('Content-Type')).toBe('image/svg+xml');
+
 		const icoRes = await callApi('/favicon.ico');
 		expect(icoRes.status).toBe(200);
 		expect(icoRes.headers.get('Content-Type')).toBe('image/svg+xml');
+
+		const prefixedIcoRes = await callApi('/cookbook/favicon.ico');
+		expect(prefixedIcoRes.status).toBe(200);
+		expect(prefixedIcoRes.headers.get('Content-Type')).toBe('image/svg+xml');
 	} finally {
 		try {
 			if (fs.existsSync(jsPath)) fs.rmSync(jsPath);

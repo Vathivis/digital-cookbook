@@ -1,5 +1,9 @@
+ARG VITE_BASE_PATH=/cookbook/
+
 FROM oven/bun:alpine AS build
 WORKDIR /app
+ARG VITE_BASE_PATH
+ENV VITE_BASE_PATH=${VITE_BASE_PATH}
 
 # Install deps (cache-friendly)
 COPY package.json bun.lockb bun.lock ./
@@ -15,6 +19,7 @@ RUN bun install --frozen-lockfile --production
 
 FROM alpine:3.20 AS runtime
 WORKDIR /app
+ARG VITE_BASE_PATH
 
 # Minimal runtime deps for Bun on Alpine.
 RUN apk add --no-cache ca-certificates libstdc++ gcompat
@@ -22,6 +27,7 @@ RUN apk add --no-cache ca-certificates libstdc++ gcompat
 ENV NODE_ENV=production
 ENV PORT=4000
 ENV HOST=0.0.0.0
+ENV COOKBOOK_BASE_PATH=${VITE_BASE_PATH}
 # Persist DB by mounting /app/data (or override COOKBOOK_DB_PATH)
 ENV COOKBOOK_DB_PATH=/app/data/cookbook.db
 

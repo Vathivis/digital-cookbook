@@ -134,6 +134,12 @@ const staticContentTypes: Record<string, string> = {
 	'.woff2': 'font/woff2'
 };
 const getStaticContentType = (filePath: string) => staticContentTypes[path.extname(filePath).toLowerCase()];
+const normalizeStaticBasePath = (value: string | undefined) => {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed === '/') return '';
+	return `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+};
+const staticBasePath = normalizeStaticBasePath(process.env.COOKBOOK_BASE_PATH ?? process.env.VITE_BASE_PATH);
 
 const db = new Database(resolvedDbPath, { create: true });
 export const database = db;
@@ -999,6 +1005,9 @@ if (shouldServeStatic) {
 	app.get('/*', async ({ request, set }) => {
 		const url = new URL(request.url);
 		let pathname = url.pathname;
+		if (staticBasePath && (pathname === staticBasePath || pathname.startsWith(`${staticBasePath}/`))) {
+			pathname = pathname.slice(staticBasePath.length) || '/';
+		}
 		if (pathname === '/' || pathname === '') pathname = '/index.html';
 		if (pathname === '/favicon.ico') pathname = '/favicon.svg';
 
