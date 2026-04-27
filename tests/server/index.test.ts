@@ -92,6 +92,41 @@ test('static file serving blocks traversal via encoded separators', async () => 
 	}
 });
 
+test('static file serving returns browser-safe content types', async () => {
+	const assetsDir = path.join(distDir, 'assets');
+	const jsPath = path.join(assetsDir, 'static-test.js');
+	const faviconPath = path.join(distDir, 'favicon.svg');
+	const faviconExisted = fs.existsSync(faviconPath);
+
+	fs.mkdirSync(assetsDir, { recursive: true });
+	fs.writeFileSync(jsPath, 'export const ok = true;');
+	if (!faviconExisted) {
+		fs.writeFileSync(faviconPath, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>');
+	}
+
+	try {
+		const jsRes = await callApi('/assets/static-test.js');
+		expect(jsRes.status).toBe(200);
+		expect(jsRes.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8');
+
+		const svgRes = await callApi('/favicon.svg');
+		expect(svgRes.status).toBe(200);
+		expect(svgRes.headers.get('Content-Type')).toBe('image/svg+xml');
+
+		const icoRes = await callApi('/favicon.ico');
+		expect(icoRes.status).toBe(200);
+		expect(icoRes.headers.get('Content-Type')).toBe('image/svg+xml');
+	} finally {
+		try {
+			if (fs.existsSync(jsPath)) fs.rmSync(jsPath);
+			if (!faviconExisted && fs.existsSync(faviconPath)) fs.rmSync(faviconPath);
+			if (fs.existsSync(assetsDir) && fs.readdirSync(assetsDir).length === 0) fs.rmdirSync(assetsDir);
+		} catch (error) {
+			console.error('Failed to clean up static content type test artifacts', error);
+		}
+	}
+});
+
 test('recipe mutations handle image clears and invalid ids', async () => {
 	const createRes = await callApi('/api/recipes', {
 		method: 'POST',

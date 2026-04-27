@@ -116,6 +116,24 @@ if (!fs.existsSync(resolvedDir)) fs.mkdirSync(resolvedDir, { recursive: true });
 const distDir = path.resolve(__dirname, '../dist');
 const distIndexPath = path.join(distDir, 'index.html');
 const shouldServeStatic = process.env.SERVE_STATIC !== 'false' && fs.existsSync(distIndexPath);
+const staticContentTypes: Record<string, string> = {
+	'.css': 'text/css; charset=utf-8',
+	'.html': 'text/html; charset=utf-8',
+	'.ico': 'image/x-icon',
+	'.jpeg': 'image/jpeg',
+	'.jpg': 'image/jpeg',
+	'.js': 'application/javascript; charset=utf-8',
+	'.json': 'application/json; charset=utf-8',
+	'.map': 'application/json; charset=utf-8',
+	'.mjs': 'application/javascript; charset=utf-8',
+	'.png': 'image/png',
+	'.svg': 'image/svg+xml',
+	'.txt': 'text/plain; charset=utf-8',
+	'.wasm': 'application/wasm',
+	'.webp': 'image/webp',
+	'.woff2': 'font/woff2'
+};
+const getStaticContentType = (filePath: string) => staticContentTypes[path.extname(filePath).toLowerCase()];
 
 const db = new Database(resolvedDbPath, { create: true });
 export const database = db;
@@ -982,6 +1000,7 @@ if (shouldServeStatic) {
 		const url = new URL(request.url);
 		let pathname = url.pathname;
 		if (pathname === '/' || pathname === '') pathname = '/index.html';
+		if (pathname === '/favicon.ico') pathname = '/favicon.svg';
 
 		// Reject encoded path separators so decoding can't introduce new traversal segments.
 		if (/%2f|%5c/i.test(pathname)) return notFound(set);
@@ -1018,12 +1037,14 @@ if (shouldServeStatic) {
 
 		const file = Bun.file(filePath);
 		if (await file.exists()) {
-			if (relativeToDist.startsWith(`assets${path.sep}`)) {
-				set.headers['Cache-Control'] = 'public, max-age=31536000, immutable';
-			} else {
-				set.headers['Cache-Control'] = 'no-cache';
-			}
-			return new Response(file);
+			const headers = new Headers();
+			headers.set(
+				'Cache-Control',
+				relativeToDist.startsWith(`assets${path.sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache'
+			);
+			const contentType = getStaticContentType(filePath);
+			if (contentType) headers.set('Content-Type', contentType);
+			return new Response(file, { headers });
 		}
 
 		// Asset-like paths that don't exist should be a 404 (avoid returning index.html).
@@ -1031,8 +1052,12 @@ if (shouldServeStatic) {
 
 		const indexFile = Bun.file(distIndexPath);
 		if (await indexFile.exists()) {
-			set.headers['Cache-Control'] = 'no-cache';
-			return new Response(indexFile);
+			return new Response(indexFile, {
+				headers: {
+					'Cache-Control': 'no-cache',
+					'Content-Type': 'text/html; charset=utf-8'
+				}
+			});
 		}
 		return notFound(set);
 	});
