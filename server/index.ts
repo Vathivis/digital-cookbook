@@ -804,11 +804,17 @@ export const app = new Elysia({
 		if (!exists) return notFound(set);
 		const parsed = recipeUpdateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
+		const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoDataUrl');
+		const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoThumbnailDataUrl');
+		if (hasPhotoThumbnailDataUrl && parsed.data.photoThumbnailDataUrl != null) {
+			const hasFullPhoto = hasPhotoDataUrl
+				? parsed.data.photoDataUrl !== null
+				: (getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null) !== null;
+			if (!hasFullPhoto) return badRequest(set, 'photoThumbnailDataUrl requires an existing or supplied photoDataUrl');
+		}
 		const update = (payload: RecipeUpdateInput) => {
 			const updates: string[] = [];
 			const params: (string | number | null)[] = [];
-			const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(payload, 'photoDataUrl');
-			const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(payload, 'photoThumbnailDataUrl');
 			if (payload.title !== undefined) {
 				updates.push('title = ?');
 				params.push(payload.title);

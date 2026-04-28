@@ -174,6 +174,32 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const searchPayload = (await searchBefore.json()) as Array<{ id: number; photo: string | null }>;
 	expect(searchPayload.find((recipe) => recipe.id === id)?.photo).toBe('data:image/jpeg;base64,thumb');
 
+	const noPhotoRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'No Photo Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(noPhotoRes.status).toBe(200);
+	const noPhoto = (await noPhotoRes.json()) as { id: number };
+
+	const patchNoPhotoThumbnail = await callApi(`/api/recipes/${noPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: 'data:image/jpeg;base64,NO-FULL-PHOTO-THUMB' })
+	});
+	expect(patchNoPhotoThumbnail.status).toBe(400);
+
+	const listAfterRejectedThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listAfterRejectedThumbnail.status).toBe(200);
+	const listRejectedThumbnailPayload = (await listAfterRejectedThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listRejectedThumbnailPayload.find((recipe) => recipe.id === noPhoto.id)?.photo).toBeNull();
+
 	const legacyPhotoRes = await callApi('/api/recipes', {
 		method: 'POST',
 		body: JSON.stringify({
