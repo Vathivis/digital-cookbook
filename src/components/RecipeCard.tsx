@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
-import { loadImageDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
+import { loadImageDataUrl, selectPhotoThumbnailDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus, ImagePlus } from 'lucide-react';
@@ -491,7 +491,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			.then(([dataUrl, thumbnailDataUrl]) => {
 				if (imageTaskRef.current === taskId) {
 					setPhoto(dataUrl);
-					setPhotoThumbnail(thumbnailDataUrl);
+					setPhotoThumbnail(selectPhotoThumbnailDataUrl(dataUrl, thumbnailDataUrl));
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));

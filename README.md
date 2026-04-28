@@ -127,7 +127,7 @@ docker build -t digital-cookbook:local .
 # Run (persists SQLite DB in a named volume)
 docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data digital-cookbook:local
 
-# Or use Compose (health check cadence configurable via .env / shell env)
+# Or use Compose
 docker compose up --build -d
 ```
 
@@ -137,6 +137,7 @@ Notes:
 - Data is persisted via `/app/data` (default `COOKBOOK_DB_PATH=/app/data/cookbook.db`).
 - Override listen address/port with `HOST` / `PORT` env vars if needed.
 - Optional auth can also be set via env (`AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD`).
+- Thumbnail data URL validation defaults to `PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=2000000`; for local builds, set matching `VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH` if you want the browser-side precheck to use the same cap.
 - Image includes a Docker `HEALTHCHECK` that probes `GET /health`, so `docker ps` reports `healthy`/`unhealthy`.
 - The image-level `HEALTHCHECK` timings are baked into the image.
 
@@ -146,7 +147,7 @@ If you want to tweak the container policy in Compose, use the provided `compose.
 docker compose up --build -d
 ```
 
-`compose.yml` keeps the same `/health` probe in a plain `wget`-based healthcheck block that you can edit directly.
+`compose.yml` keeps the same `/health` probe in a plain `wget`-based healthcheck block. Edit that block directly if you want different healthcheck timing or retry policy.
 
 With Compose, the container still probes `GET /health`, and the app still uses:
 - `PORT`
@@ -155,6 +156,7 @@ With Compose, the container still probes `GET /health`, and the app still uses:
 - `AUTH_ENABLED`
 - `AUTH_USERNAME`
 - `AUTH_PASSWORD`
+- `PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH`
 
 ## Backend Overview
 - `server/index.ts` boots the Bun SQLite DB (WAL + FK) and defines routes such as:

@@ -47,7 +47,8 @@ const { app, database } = await withEnv(
 		COOKBOOK_BASE_PATH: '/cookbook/',
 		AUTH_ENABLED: 'false',
 		AUTH_USERNAME: undefined,
-		AUTH_PASSWORD: undefined
+		AUTH_PASSWORD: undefined,
+		PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH: '64'
 	},
 	() => import(`../../server/index?index=${Date.now()}-${Math.random()}`)
 );
@@ -323,6 +324,26 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 
 	const invalidLikeRemove = await callApi('/api/recipes/99999/likes/ghost', { method: 'DELETE' });
 	expect(invalidLikeRemove.status).toBe(404);
+});
+
+test('recipe thumbnail data URL length cap is configurable via env', async () => {
+	const oversizedThumbnail = `data:image/jpeg;base64,${'x'.repeat(80)}`;
+	const res = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Oversized Thumbnail Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			photoDataUrl: 'data:image/png;base64,PHOTO',
+			photoThumbnailDataUrl: oversizedThumbnail
+		})
+	});
+
+	expect(res.status).toBe(400);
 });
 
 test('ingredients endpoint returns catalogued names without duplicates', async () => {

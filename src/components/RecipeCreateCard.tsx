@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { createRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
-import { loadImageDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
+import { loadImageDataUrl, selectPhotoThumbnailDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -230,7 +230,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 			.then(([dataUrl, thumbnailDataUrl]) => {
 				if (imageTaskRef.current === taskId) {
 					setPhoto(dataUrl);
-					setPhotoThumbnail(thumbnailDataUrl);
+					setPhotoThumbnail(selectPhotoThumbnailDataUrl(dataUrl, thumbnailDataUrl));
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));

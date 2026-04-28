@@ -46,6 +46,19 @@ interface StepRow {
 }
 
 const nonEmptyString = z.string().trim().min(1);
+const DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = 2_000_000;
+const parsePositiveIntegerEnv = (name: string, defaultValue: number) => {
+	const raw = process.env[name]?.trim();
+	if (!raw) return defaultValue;
+	const parsed = Number(raw);
+	if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+	console.warn(`${name} must be a positive integer; using ${defaultValue}`);
+	return defaultValue;
+};
+const PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = parsePositiveIntegerEnv(
+	'PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH',
+	DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH
+);
 
 const recipeBaseSchema = z
 	.object({
@@ -56,7 +69,7 @@ const recipeBaseSchema = z
 		steps: z.array(z.string().trim().max(2000)).max(500).optional(),
 		notes: z.string().max(10_000).optional(),
 		photoDataUrl: z.union([z.string().max(35_000_000), z.null()]).optional(),
-		photoThumbnailDataUrl: z.union([z.string().max(2_000_000), z.null()]).optional(),
+		photoThumbnailDataUrl: z.union([z.string().max(PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH), z.null()]).optional(),
 		tags: z.array(z.string().trim().min(1).max(64)).max(50).optional()
 	})
 	.strict();
