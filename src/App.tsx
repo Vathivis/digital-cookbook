@@ -129,6 +129,7 @@ function App() {
 		(overrideQuery?: string) => {
 			const cookbookId = activeCookbook;
 			if (!cookbookId) return Promise.resolve();
+			if (!authStatus) return Promise.resolve();
 			if (authStatus?.enabled && !authStatus.authenticated) return Promise.resolve();
 			const q = (overrideQuery ?? queryRef.current).trim();
 			if (!shouldStartRecipeReload({

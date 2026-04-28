@@ -96,6 +96,42 @@ describe('App auth gating', () => {
 		expect(firstCookbookFetchCount).toBe(0);
 	});
 
+	test('does not fetch saved cookbook recipes before auth status resolves logged out', async () => {
+		localStorage.setItem('digital-cookbook.activeCookbookId', '2');
+		let recipesFetchCount = 0;
+		let resolveAuthStatus: (response: Response) => void = () => {};
+		const authStatusPromise = new Promise<Response>((resolve) => {
+			resolveAuthStatus = resolve;
+		});
+		globalThis.fetch = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/auth/status')) return authStatusPromise;
+			if (url.includes('/api/recipes?cookbookId=2')) {
+				recipesFetchCount += 1;
+				return Promise.resolve(json({ error: 'unauthorized' }, 401));
+			}
+			if (url.endsWith('/api/cookbooks')) return Promise.resolve(json([{ id: 2, name: 'Saved' }]));
+			return Promise.resolve(json({ error: 'not found' }, 404));
+		}) as typeof fetch;
+
+		const { getByRole } = render(<App />);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(recipesFetchCount).toBe(0);
+
+		await act(async () => {
+			resolveAuthStatus(json({ enabled: true, authenticated: false }));
+			await authStatusPromise;
+		});
+
+		await waitFor(() => {
+			expect(getByRole('heading', { name: 'Sign in' })).toBeTruthy();
+		});
+		expect(recipesFetchCount).toBe(0);
+	});
+
 	test('shows login screen when auth status request fails', async () => {
 		const originalConsoleError = console.error;
 		console.error = mock(() => {}) as typeof console.error;
