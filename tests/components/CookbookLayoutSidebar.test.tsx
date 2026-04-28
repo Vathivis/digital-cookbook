@@ -10,8 +10,14 @@ Object.assign(globalThis, {
 	document: globalWindow.document,
 	navigator: globalWindow.navigator,
 	HTMLElement: globalWindow.HTMLElement,
+	HTMLButtonElement: globalWindow.HTMLButtonElement,
+	HTMLFormElement: globalWindow.HTMLFormElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
 	Node: globalWindow.Node,
+	Event: globalWindow.Event,
+	InputEvent: globalWindow.InputEvent,
+	MouseEvent: globalWindow.MouseEvent,
+	FormData: globalWindow.FormData,
 });
 
 if (!globalThis.MutationObserver) {
@@ -67,6 +73,46 @@ describe('CookbookLayoutSidebar', () => {
 			expect(getByRole('button', { name: 'Add Cookbook' })).toBeTruthy();
 		});
 		expect(listCookbooksCount).toBe(1);
+	});
+
+	test('recovers cookbook selection after the initial cookbook fetch fails', async () => {
+		let listCookbooksCount = 0;
+		const originalConsoleError = console.error;
+		console.error = mock(() => {}) as typeof console.error;
+		globalThis.fetch = mock((input: string | URL | Request, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+			if (url.endsWith('/api/cookbooks') && method === 'GET') {
+				listCookbooksCount += 1;
+				if (listCookbooksCount === 1) return Promise.reject(new Error('temporary failure'));
+				return Promise.resolve(json([{ id: 2, name: 'Recovered' }]));
+			}
+			if (url.endsWith('/api/cookbooks') && method === 'POST') {
+				return Promise.resolve(json({ id: 2 }));
+			}
+			return Promise.resolve(json({ ok: true }));
+		}) as typeof fetch;
+
+		try {
+			const onSelect = mock(() => {});
+			const { getByRole, getByPlaceholderText, getByText } = render(<CookbookLayoutSidebar activeCookbookId={99} onSelect={onSelect} />);
+
+			await waitFor(() => {
+				expect(onSelect).toHaveBeenCalledWith(null);
+			});
+
+			fireEvent.click(getByRole('button', { name: 'Add Cookbook' }));
+			const input = getByPlaceholderText('Name') as HTMLInputElement;
+			fireEvent.input(input, { target: { value: 'Recovered' } });
+			fireEvent.submit(input.closest('form')!);
+
+			await waitFor(() => {
+				expect(getByText('Recovered')).toBeTruthy();
+			});
+			expect(onSelect).toHaveBeenCalledWith(2);
+		} finally {
+			console.error = originalConsoleError;
+		}
 	});
 });
 

@@ -785,6 +785,9 @@ export const app = new Elysia({
 	.post('/api/recipes', ({ body, set }) => {
 		const parsed = recipeCreateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
+		if (parsed.data.photoThumbnailDataUrl != null && !parsed.data.photoDataUrl) {
+			return badRequest(set, 'photoThumbnailDataUrl requires supplied photoDataUrl');
+		}
 		const create = (payload: RecipeCreateInput) => {
 			const info = runStatement(
 				`INSERT INTO recipes (cookbook_id, title, description, author, photo, photo_thumbnail, servings)

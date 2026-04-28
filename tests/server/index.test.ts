@@ -74,6 +74,25 @@ test('auth is disabled for server index tests', async () => {
 	await expect(status.json()).resolves.toEqual({ enabled: false, authenticated: true });
 });
 
+test('recipe create rejects thumbnail-only photo payloads', async () => {
+	const res = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Thumbnail Only Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			photoThumbnailDataUrl: 'data:image/jpeg;base64,ORPHAN'
+		})
+	});
+
+	expect(res.status).toBe(400);
+	await expect(res.json()).resolves.toEqual({ error: 'photoThumbnailDataUrl requires supplied photoDataUrl' });
+});
+
 test('static file serving blocks traversal via encoded separators', async () => {
 	const siblingDistDir = path.resolve(process.cwd(), 'dist2');
 	const siblingFilePath = path.join(siblingDistDir, 'secret.txt');
