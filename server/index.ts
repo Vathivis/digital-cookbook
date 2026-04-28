@@ -800,7 +800,7 @@ export const app = new Elysia({
 		const idParsed = idParamSchema.safeParse(params);
 		if (!idParsed.success) return validationError(set, idParsed.error);
 		const id = idParsed.data.id;
-		const exists = getStatement<{ id: number; photo: string | null }>('SELECT id, photo FROM recipes WHERE id = ?', id);
+		const exists = getStatement<{ id: number }>('SELECT id FROM recipes WHERE id = ?', id);
 		if (!exists) return notFound(set);
 		const parsed = recipeUpdateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
@@ -824,9 +824,15 @@ export const app = new Elysia({
 			if (hasPhotoDataUrl) {
 				updates.push('photo = ?');
 				params.push(payload.photoDataUrl ?? null);
-				if (!hasPhotoThumbnailDataUrl && (payload.photoDataUrl === null || payload.photoDataUrl !== exists.photo)) {
+				if (!hasPhotoThumbnailDataUrl && payload.photoDataUrl === null) {
 					updates.push('photo_thumbnail = ?');
 					params.push(null);
+				} else if (!hasPhotoThumbnailDataUrl) {
+					const currentPhoto = getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null;
+					if (payload.photoDataUrl !== currentPhoto) {
+						updates.push('photo_thumbnail = ?');
+						params.push(null);
+					}
 				}
 			}
 			if (hasPhotoThumbnailDataUrl) {

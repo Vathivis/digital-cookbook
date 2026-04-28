@@ -216,6 +216,17 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const searchBackfillPayload = (await searchWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
 	expect(searchBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
 
+	const patchLegacyTitleOnly = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ title: 'Legacy Photo Recipe Updated' })
+	});
+	expect(patchLegacyTitleOnly.status).toBe(200);
+
+	const listWithTitleOnlyPatch = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithTitleOnlyPatch.status).toBe(200);
+	const listTitleOnlyPatchPayload = (await listWithTitleOnlyPatch.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listTitleOnlyPatchPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
 	const patchLegacyPhotoUnchanged = await callApi(`/api/recipes/${legacyPhoto.id}`, {
 		method: 'PATCH',
 		body: JSON.stringify({ photoDataUrl: 'data:image/png;base64,LEGACY' })
