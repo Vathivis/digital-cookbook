@@ -13,7 +13,7 @@ import { Sun, Moon } from 'lucide-react';
 import { useFlipList } from './hooks/useFlipList';
 import { useAnimatedItems } from './hooks/useAnimatedItems';
 import { filterAndSortRecipes, type SortMode, type FilterMode } from './lib/filters';
-import { shouldApplyRecipeReload } from './lib/reloadGuards';
+import { shouldApplyRecipeReload, shouldStartRecipeReload } from './lib/reloadGuards';
 
 const ACTIVE_COOKBOOK_STORAGE_KEY = 'digital-cookbook.activeCookbookId';
 const ACTIVE_COOKBOOK_QUERY_KEY = 'cookbookId';
@@ -131,6 +131,14 @@ function App() {
 			if (!cookbookId) return Promise.resolve();
 			if (authStatus?.enabled && !authStatus.authenticated) return Promise.resolve();
 			const q = (overrideQuery ?? queryRef.current).trim();
+			if (!shouldStartRecipeReload({
+				cookbookId,
+				activeCookbookId: activeCookbookRef.current,
+				query: q,
+				currentQuery: queryRef.current
+			})) {
+				return Promise.resolve();
+			}
 			const requestId = ++reloadRequestRef.current;
 			const run = async () => {
 				const data = q ? await searchRecipes(cookbookId, q) : await getRecipes(cookbookId);
