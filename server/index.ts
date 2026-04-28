@@ -807,6 +807,8 @@ export const app = new Elysia({
 		const update = (payload: RecipeUpdateInput) => {
 			const updates: string[] = [];
 			const params: (string | number | null)[] = [];
+			const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(payload, 'photoDataUrl');
+			const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(payload, 'photoThumbnailDataUrl');
 			if (payload.title !== undefined) {
 				updates.push('title = ?');
 				params.push(payload.title);
@@ -819,17 +821,17 @@ export const app = new Elysia({
 				updates.push('author = ?');
 				params.push(payload.author);
 			}
-			if (Object.prototype.hasOwnProperty.call(payload, 'photoDataUrl')) {
+			if (hasPhotoDataUrl) {
 				updates.push('photo = ?');
 				params.push(payload.photoDataUrl ?? null);
-				if (!Object.prototype.hasOwnProperty.call(payload, 'photoThumbnailDataUrl')) {
+				if (!hasPhotoThumbnailDataUrl && payload.photoDataUrl === null) {
 					updates.push('photo_thumbnail = ?');
 					params.push(null);
 				}
 			}
-			if (Object.prototype.hasOwnProperty.call(payload, 'photoThumbnailDataUrl')) {
+			if (hasPhotoThumbnailDataUrl) {
 				updates.push('photo_thumbnail = ?');
-				params.push(payload.photoDataUrl ? payload.photoThumbnailDataUrl ?? null : null);
+				params.push(hasPhotoDataUrl && payload.photoDataUrl === null ? null : payload.photoThumbnailDataUrl ?? null);
 			}
 			if (payload.servings !== undefined) {
 				updates.push('servings = ?');

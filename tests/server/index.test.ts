@@ -200,6 +200,22 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const searchWithLegacyPayload = (await searchWithLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
 	expect(searchWithLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY');
 
+	const patchLegacyThumbnail = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: 'data:image/jpeg;base64,LEGACY-THUMB' })
+	});
+	expect(patchLegacyThumbnail.status).toBe(200);
+
+	const listWithBackfilledThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithBackfilledThumbnail.status).toBe(200);
+	const listBackfillPayload = (await listWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const searchWithBackfilledThumbnail = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithBackfilledThumbnail.status).toBe(200);
+	const searchBackfillPayload = (await searchWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
 	const patchClear = await callApi(`/api/recipes/${id}`, {
 		method: 'PATCH',
 		body: JSON.stringify({ photoDataUrl: null })
@@ -209,6 +225,11 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const detailAfter = await callApi(`/api/recipes/${id}`);
 	const afterPayload = await detailAfter.json();
 	expect(afterPayload.photo).toBeNull();
+
+	const listAfterClear = await callApi('/api/recipes?cookbookId=1');
+	expect(listAfterClear.status).toBe(200);
+	const listAfterClearPayload = (await listAfterClear.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listAfterClearPayload.find((recipe) => recipe.id === id)?.photo).toBeNull();
 
 	const missingPatch = await callApi('/api/recipes/99999', {
 		method: 'PATCH',
