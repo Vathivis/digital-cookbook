@@ -824,7 +824,7 @@ export const app = new Elysia({
 			if (hasPhotoDataUrl) {
 				updates.push('photo = ?');
 				params.push(payload.photoDataUrl ?? null);
-				if (!hasPhotoThumbnailDataUrl && payload.photoDataUrl === null) {
+				if (!hasPhotoThumbnailDataUrl) {
 					updates.push('photo_thumbnail = ?');
 					params.push(null);
 				}

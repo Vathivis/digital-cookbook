@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { Window as HappyWindow } from 'happy-dom';
 import { RecipeCard } from '@/components/RecipeCard';
 import { webcrypto } from 'node:crypto';
@@ -11,7 +11,16 @@ Object.assign(globalThis, {
 	document: globalWindow.document,
 	navigator: globalWindow.navigator,
 	HTMLElement: globalWindow.HTMLElement,
+	HTMLButtonElement: globalWindow.HTMLButtonElement,
+	HTMLFormElement: globalWindow.HTMLFormElement,
+	HTMLInputElement: globalWindow.HTMLInputElement,
 	Node: globalWindow.Node,
+	Event: globalWindow.Event,
+	InputEvent: globalWindow.InputEvent,
+	KeyboardEvent: globalWindow.KeyboardEvent,
+	MouseEvent: globalWindow.MouseEvent,
+	SubmitEvent: globalWindow.SubmitEvent,
+	FormData: globalWindow.FormData,
 });
 
 if (!globalThis.crypto) {
@@ -44,7 +53,10 @@ if (!globalThis.MutationObserver) {
 	globalThis.MutationObserver = MutationObserverStub as unknown as typeof MutationObserver;
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	mock.restore();
+});
 
 const baseRecipe = {
 	id: 1,
@@ -70,5 +82,35 @@ describe('RecipeCard', () => {
 			expect(getByText('Jamie')).toBeTruthy();
 		});
 		expect(queryByText('Alex')).toBeNull();
+	});
+
+	test('does not remove an existing like when duplicate quick-like submission would fail', async () => {
+		const fetchMock = mock(() => Promise.reject(new Error('network fail')));
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const originalConsoleError = console.error;
+		console.error = mock(() => {}) as typeof console.error;
+
+		try {
+			const { getByText, getByPlaceholderText, queryByPlaceholderText } = render(
+				<RecipeCard recipe={{ ...baseRecipe, likes: ['Alex'] }} onChange={() => {}} />
+			);
+
+			expect(getByText('Alex')).toBeTruthy();
+			fireEvent.click(getByText('like'));
+
+			const input = getByPlaceholderText('Name who likes this') as HTMLInputElement;
+			fireEvent.input(input, { target: { value: 'Alex' } });
+			fireEvent.submit(input.closest('form')!);
+
+			await waitFor(() => {
+				expect(queryByPlaceholderText('Name who likes this')).toBeNull();
+			});
+			expect(getByText('Alex')).toBeTruthy();
+			expect(fetchMock).toHaveBeenCalledTimes(0);
+		} finally {
+			globalThis.fetch = originalFetch;
+			console.error = originalConsoleError;
+		}
 	});
 });

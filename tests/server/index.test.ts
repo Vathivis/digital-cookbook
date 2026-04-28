@@ -216,6 +216,22 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const searchBackfillPayload = (await searchWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
 	expect(searchBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
 
+	const patchLegacyPhotoOnly = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoDataUrl: 'data:image/png;base64,LEGACY-UPDATED' })
+	});
+	expect(patchLegacyPhotoOnly.status).toBe(200);
+
+	const listWithUpdatedLegacyPhoto = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithUpdatedLegacyPhoto.status).toBe(200);
+	const listUpdatedLegacyPayload = (await listWithUpdatedLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listUpdatedLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY-UPDATED');
+
+	const searchWithUpdatedLegacyPhoto = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithUpdatedLegacyPhoto.status).toBe(200);
+	const searchUpdatedLegacyPayload = (await searchWithUpdatedLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchUpdatedLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY-UPDATED');
+
 	const patchClear = await callApi(`/api/recipes/${id}`, {
 		method: 'PATCH',
 		body: JSON.stringify({ photoDataUrl: null })

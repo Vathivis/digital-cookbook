@@ -435,6 +435,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		async (name: string, targetId?: number) => {
 			const normalized = name.trim();
 			if (!normalized) return;
+			if (likes.some((existing) => normalizeName(existing) === normalizeName(normalized))) return;
 			const target = targetId ?? (full?.id ?? recipe.id);
 			pushLike(normalized);
 			try {
@@ -452,7 +453,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				}
 			}
 		},
-		[fetchAndApplyDetail, full, onChange, pullLike, pushLike, recipe.id]
+		[fetchAndApplyDetail, full, likes, onChange, pullLike, pushLike, recipe.id]
 	);
 	const addLikeInline = async () => {
 		if (!full || !likeValue.trim()) return;
