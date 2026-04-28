@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
-import { loadImageDataUrl } from '../lib/image';
+import { loadImageDataUrl, selectPhotoThumbnailDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
 import { ThumbsUp, X as XIcon, GripVertical, Minus, Plus, ImagePlus } from 'lucide-react';
@@ -220,6 +220,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		return () => document.removeEventListener('pointerdown', handlePointerDown);
 	}, [addingTag, tagSuggestionsNode]);
 	const [photo, setPhoto] = useState<string | undefined>();
+	const [photoThumbnail, setPhotoThumbnail] = useState<string | undefined>();
 	const [photoDrag, setPhotoDrag] = useState(false);
 	const photoInputRef = useRef<HTMLInputElement | null>(null);
 	const [quickLikeActive, setQuickLikeActive] = useState(false);
@@ -368,6 +369,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			const detail = await fetchAndApplyDetail(recipe, recipe.id);
 			setEditing(false);
 			setPhoto(undefined);
+			setPhotoThumbnail(undefined);
 			setViewServings(detail.servings ?? 1);
 		} catch (error) {
 			console.error('Failed to load recipe details', error);
@@ -401,51 +403,41 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			steps: esteps.map(s => s.text),
 			notes: enotes,
 			photoDataUrl: photo,
+			photoThumbnailDataUrl: photo ? photoThumbnail : undefined,
 		});
 		await fetchAndApplyDetail(full, full.id);
+		setPhoto(undefined);
+		setPhotoThumbnail(undefined);
 		setEditing(false);
 		onChange();
 	};
 	const pushLike = useCallback((name: string) => {
-		let changed = false;
-		let snapshot: string[] | null = null;
+		const normalized = normalizeName(name);
 		setLikes((prev) => {
-			if (prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
-				snapshot = prev;
-				return prev;
-			}
-			changed = true;
-			snapshot = [...prev, name];
-			return snapshot;
+			if (prev.some((existing) => normalizeName(existing) === normalized)) return prev;
+			return [...prev, name];
 		});
-		if (changed && snapshot) {
-			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
-		}
-		return changed;
+		setFull((detail) => {
+			if (!detail) return detail;
+			if ((detail.likes || []).some((existing) => normalizeName(existing) === normalized)) return detail;
+			return { ...detail, likes: [...(detail.likes || []), name] };
+		});
 	}, []);
 	const pullLike = useCallback((name: string) => {
-		let changed = false;
-		let snapshot: string[] | null = null;
+		const normalized = normalizeName(name);
 		setLikes((prev) => {
-			if (!prev.some((existing) => normalizeName(existing) === normalizeName(name))) {
-				snapshot = prev;
-				return prev;
-			}
-			changed = true;
-			snapshot = prev.filter((entry) => normalizeName(entry) !== normalizeName(name));
-			return snapshot;
+			if (!prev.some((existing) => normalizeName(existing) === normalized)) return prev;
+			return prev.filter((entry) => normalizeName(entry) !== normalized);
 		});
-		if (changed && snapshot) {
-			setFull((detail) => (detail ? { ...detail, likes: snapshot as string[] } : detail));
-		}
+		setFull((detail) => (detail ? { ...detail, likes: (detail.likes || []).filter((entry) => normalizeName(entry) !== normalized) } : detail));
 	}, []);
 	const persistLike = useCallback(
 		async (name: string, targetId?: number) => {
 			const normalized = name.trim();
 			if (!normalized) return;
+			if (likes.some((existing) => normalizeName(existing) === normalizeName(normalized))) return;
 			const target = targetId ?? (full?.id ?? recipe.id);
-			const added = pushLike(normalized);
-			if (!added) return;
+			pushLike(normalized);
 			try {
 				await addLike(target, normalized);
 				onChange();
@@ -461,7 +453,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				}
 			}
 		},
-		[fetchAndApplyDetail, full, onChange, pullLike, pushLike, recipe.id]
+		[fetchAndApplyDetail, full, likes, onChange, pullLike, pushLike, recipe.id]
 	);
 	const addLikeInline = async () => {
 		if (!full || !likeValue.trim()) return;
@@ -481,8 +473,8 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 			pushLike(name);
 		}
 	};
-	const handleQuickLikeSubmit = async () => {
-		const name = quickLikeValue.trim();
+	const handleQuickLikeSubmit = async (nameOverride?: string) => {
+		const name = (nameOverride ?? quickLikeValue).trim();
 		if (!name) return;
 		setQuickLikeActive(false);
 		setQuickLikeValue('');
@@ -495,10 +487,11 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
 		const taskId = ++imageTaskRef.current;
-		loadImageDataUrl(file)
-			.then((dataUrl) => {
+		Promise.all([loadImageDataUrl(file), loadImageDataUrl(file, THUMBNAIL_MAX_DIMENSION)])
+			.then(([dataUrl, thumbnailDataUrl]) => {
 				if (imageTaskRef.current === taskId) {
 					setPhoto(dataUrl);
+					setPhotoThumbnail(selectPhotoThumbnailDataUrl(dataUrl, thumbnailDataUrl));
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
@@ -753,15 +746,16 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							<form
 								onSubmit={(e) => {
 									e.preventDefault();
-									handleQuickLikeSubmit();
+									const formData = new FormData(e.currentTarget);
+									const name = String(formData.get('name') ?? '');
+									void handleQuickLikeSubmit(name);
 								}}
 								onClick={(e) => e.stopPropagation()}
 								className="flex flex-1 items-center gap-1"
 							>
 								<Input
 									ref={quickLikeInputRef}
-									value={quickLikeValue}
-									onChange={(e) => setQuickLikeValue(e.target.value)}
+									name="name"
 									onKeyDown={(e) => {
 										if (e.key === 'Escape') {
 											e.preventDefault();
@@ -771,7 +765,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 									placeholder="Name who likes this"
 									className="h-7 flex-1 min-w-0 text-[11px] px-2"
 								/>
-								<Button type="submit" size="sm" className="h-7 px-2 text-[11px]" disabled={!quickLikeValue.trim()}>
+								<Button type="submit" size="sm" className="h-7 px-2 text-[11px]">
 									Add
 								</Button>
 								<Button
@@ -814,16 +808,16 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 						className={`max-h-[70vh] overflow-auto pr-2 ${hasOverflow ? 'thin-scrollbar fade-scroll' : ''} ${hasOverflow && scrollFade.top ? 'fade-top' : ''} ${hasOverflow && scrollFade.bottom ? 'fade-bottom' : ''}`}
 					>
 						{!editing && (
-							<div className="relative">
+							<div className="relative overflow-hidden rounded-lg border border-border/70 bg-muted">
 								{full?.photo ? (
 									<img
 										src={full.photo}
 										alt={full.title}
-										className="w-full max-h-80 object-cover rounded"
+										className="h-48 w-full object-cover sm:h-56"
 										onLoad={() => updateScrollFade()}
 									/>
 								) : (
-									<div className="w-full max-h-80 rounded bg-muted flex items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground">No photo</div>
+									<div className="flex h-48 w-full items-center justify-center text-[11px] uppercase tracking-wide text-muted-foreground sm:h-56">No photo</div>
 								)}
 								{likes.length > 0 && (
 									<div className="absolute top-2 right-2 z-10 flex flex-wrap gap-1.5 max-w-[70%] justify-end pointer-events-none">
@@ -847,10 +841,12 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							</div>
 						)}
 
-						{!editing && <div className="mt-3 text-sm text-muted-foreground">{full?.description ?? recipe.description}</div>}
+						{!editing && (full?.description ?? recipe.description) && (
+							<div className="mt-4 text-sm leading-6 text-muted-foreground">{full?.description ?? recipe.description}</div>
+						)}
 
 						{full && !editing && (
-							<div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+							<div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-2">
 								<div>
 									<div className="flex items-center justify-between mb-2">
 										<h4 className="font-semibold">Ingredients</h4>
@@ -1195,7 +1191,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 							) : (
 								<>
 									<Button onClick={saveEdit}>Save</Button>
-									<Button variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+									<Button variant="outline" onClick={() => { setEditing(false); setPhoto(undefined); setPhotoThumbnail(undefined); }}>Cancel</Button>
 									<Button variant="destructive" className="ml-auto" type="button" onClick={async () => {
 										if (!full) return;
 										const sure = confirm(`Delete recipe "${full.title}"? This cannot be undone.`);

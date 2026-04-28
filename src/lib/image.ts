@@ -1,4 +1,16 @@
 const MAX_DIMENSION = 1600;
+export const THUMBNAIL_MAX_DIMENSION = 480;
+export const DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = 2_000_000;
+
+export function parsePhotoThumbnailMaxDataUrlLength(value: string | undefined) {
+	if (!value) return DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH;
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH;
+}
+
+export const PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = parsePhotoThumbnailMaxDataUrlLength(
+	import.meta.env.VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH
+);
 
 const readFileAsDataUrl = (file: File) =>
 	new Promise<string>((resolve, reject) => {
@@ -32,4 +44,14 @@ export async function loadImageDataUrl(file: File, maxDimension = MAX_DIMENSION)
 		}
 	}
 	return readFileAsDataUrl(file);
+}
+
+export function selectPhotoThumbnailDataUrl(
+	photoDataUrl: string | null | undefined,
+	thumbnailDataUrl: string | null | undefined
+) {
+	if (!photoDataUrl || !thumbnailDataUrl) return undefined;
+	if (thumbnailDataUrl === photoDataUrl) return undefined;
+	if (thumbnailDataUrl.length > PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH) return undefined;
+	return thumbnailDataUrl;
 }

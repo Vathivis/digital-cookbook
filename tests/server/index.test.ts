@@ -47,7 +47,8 @@ const { app, database } = await withEnv(
 		COOKBOOK_BASE_PATH: '/cookbook/',
 		AUTH_ENABLED: 'false',
 		AUTH_USERNAME: undefined,
-		AUTH_PASSWORD: undefined
+		AUTH_PASSWORD: undefined,
+		PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH: '64'
 	},
 	() => import(`../../server/index?index=${Date.now()}-${Math.random()}`)
 );
@@ -71,6 +72,25 @@ test('auth is disabled for server index tests', async () => {
 	const status = await callApi('/api/auth/status');
 	expect(status.status).toBe(200);
 	await expect(status.json()).resolves.toEqual({ enabled: false, authenticated: true });
+});
+
+test('recipe create rejects thumbnail-only photo payloads', async () => {
+	const res = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Thumbnail Only Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			photoThumbnailDataUrl: 'data:image/jpeg;base64,ORPHAN'
+		})
+	});
+
+	expect(res.status).toBe(400);
+	await expect(res.json()).resolves.toEqual({ error: 'photoThumbnailDataUrl requires supplied photoDataUrl' });
 });
 
 test('static file serving blocks traversal via encoded separators', async () => {
@@ -151,7 +171,8 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 			ingredients: [],
 			steps: [],
 			notes: '',
-			photoDataUrl: 'data:image/png;base64,AAA'
+			photoDataUrl: 'data:image/png;base64,AAA',
+			photoThumbnailDataUrl: 'data:image/jpeg;base64,thumb'
 		})
 	});
 	expect(createRes.status).toBe(200);
@@ -163,6 +184,127 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const beforePayload = await detailBefore.json();
 	expect(beforePayload.photo).toBe('data:image/png;base64,AAA');
 
+	const listBefore = await callApi('/api/recipes?cookbookId=1');
+	expect(listBefore.status).toBe(200);
+	const listPayload = (await listBefore.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listPayload.find((recipe) => recipe.id === id)?.photo).toBe('data:image/jpeg;base64,thumb');
+
+	const searchBefore = await callApi('/api/recipes/search?cookbookId=1&q=Photo');
+	expect(searchBefore.status).toBe(200);
+	const searchPayload = (await searchBefore.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchPayload.find((recipe) => recipe.id === id)?.photo).toBe('data:image/jpeg;base64,thumb');
+
+	const noPhotoRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'No Photo Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(noPhotoRes.status).toBe(200);
+	const noPhoto = (await noPhotoRes.json()) as { id: number };
+
+	const patchNoPhotoThumbnail = await callApi(`/api/recipes/${noPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: 'data:image/jpeg;base64,NO-FULL-PHOTO-THUMB' })
+	});
+	expect(patchNoPhotoThumbnail.status).toBe(400);
+
+	const listAfterRejectedThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listAfterRejectedThumbnail.status).toBe(200);
+	const listRejectedThumbnailPayload = (await listAfterRejectedThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listRejectedThumbnailPayload.find((recipe) => recipe.id === noPhoto.id)?.photo).toBeNull();
+
+	const legacyPhotoRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Legacy Photo Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			photoDataUrl: 'data:image/png;base64,LEGACY'
+		})
+	});
+	expect(legacyPhotoRes.status).toBe(200);
+	const legacyPhoto = (await legacyPhotoRes.json()) as { id: number };
+
+	const listWithLegacyPhoto = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithLegacyPhoto.status).toBe(200);
+	const listWithLegacyPayload = (await listWithLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listWithLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY');
+
+	const searchWithLegacyPhoto = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithLegacyPhoto.status).toBe(200);
+	const searchWithLegacyPayload = (await searchWithLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchWithLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY');
+
+	const patchLegacyThumbnail = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: 'data:image/jpeg;base64,LEGACY-THUMB' })
+	});
+	expect(patchLegacyThumbnail.status).toBe(200);
+
+	const listWithBackfilledThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithBackfilledThumbnail.status).toBe(200);
+	const listBackfillPayload = (await listWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const searchWithBackfilledThumbnail = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithBackfilledThumbnail.status).toBe(200);
+	const searchBackfillPayload = (await searchWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const patchLegacyTitleOnly = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ title: 'Legacy Photo Recipe Updated' })
+	});
+	expect(patchLegacyTitleOnly.status).toBe(200);
+
+	const listWithTitleOnlyPatch = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithTitleOnlyPatch.status).toBe(200);
+	const listTitleOnlyPatchPayload = (await listWithTitleOnlyPatch.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listTitleOnlyPatchPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const patchLegacyPhotoUnchanged = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoDataUrl: 'data:image/png;base64,LEGACY' })
+	});
+	expect(patchLegacyPhotoUnchanged.status).toBe(200);
+
+	const listWithPreservedThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithPreservedThumbnail.status).toBe(200);
+	const listPreservedThumbnailPayload = (await listWithPreservedThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listPreservedThumbnailPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const searchWithPreservedThumbnail = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithPreservedThumbnail.status).toBe(200);
+	const searchPreservedThumbnailPayload = (await searchWithPreservedThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchPreservedThumbnailPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/jpeg;base64,LEGACY-THUMB');
+
+	const patchLegacyPhotoOnly = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoDataUrl: 'data:image/png;base64,LEGACY-UPDATED' })
+	});
+	expect(patchLegacyPhotoOnly.status).toBe(200);
+
+	const listWithUpdatedLegacyPhoto = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithUpdatedLegacyPhoto.status).toBe(200);
+	const listUpdatedLegacyPayload = (await listWithUpdatedLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listUpdatedLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY-UPDATED');
+
+	const searchWithUpdatedLegacyPhoto = await callApi('/api/recipes/search?cookbookId=1&q=Legacy');
+	expect(searchWithUpdatedLegacyPhoto.status).toBe(200);
+	const searchUpdatedLegacyPayload = (await searchWithUpdatedLegacyPhoto.json()) as Array<{ id: number; photo: string | null }>;
+	expect(searchUpdatedLegacyPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo).toBe('data:image/png;base64,LEGACY-UPDATED');
+
 	const patchClear = await callApi(`/api/recipes/${id}`, {
 		method: 'PATCH',
 		body: JSON.stringify({ photoDataUrl: null })
@@ -172,6 +314,11 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	const detailAfter = await callApi(`/api/recipes/${id}`);
 	const afterPayload = await detailAfter.json();
 	expect(afterPayload.photo).toBeNull();
+
+	const listAfterClear = await callApi('/api/recipes?cookbookId=1');
+	expect(listAfterClear.status).toBe(200);
+	const listAfterClearPayload = (await listAfterClear.json()) as Array<{ id: number; photo: string | null }>;
+	expect(listAfterClearPayload.find((recipe) => recipe.id === id)?.photo).toBeNull();
 
 	const missingPatch = await callApi('/api/recipes/99999', {
 		method: 'PATCH',
@@ -196,6 +343,26 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 
 	const invalidLikeRemove = await callApi('/api/recipes/99999/likes/ghost', { method: 'DELETE' });
 	expect(invalidLikeRemove.status).toBe(404);
+});
+
+test('recipe thumbnail data URL length cap is configurable via env', async () => {
+	const oversizedThumbnail = `data:image/jpeg;base64,${'x'.repeat(80)}`;
+	const res = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Oversized Thumbnail Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			photoDataUrl: 'data:image/png;base64,PHOTO',
+			photoThumbnailDataUrl: oversizedThumbnail
+		})
+	});
+
+	expect(res.status).toBe(400);
 });
 
 test('ingredients endpoint returns catalogued names without duplicates', async () => {

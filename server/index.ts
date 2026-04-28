@@ -46,6 +46,19 @@ interface StepRow {
 }
 
 const nonEmptyString = z.string().trim().min(1);
+const DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = 2_000_000;
+const parsePositiveIntegerEnv = (name: string, defaultValue: number) => {
+	const raw = process.env[name]?.trim();
+	if (!raw) return defaultValue;
+	const parsed = Number(raw);
+	if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+	console.warn(`${name} must be a positive integer; using ${defaultValue}`);
+	return defaultValue;
+};
+const PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = parsePositiveIntegerEnv(
+	'PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH',
+	DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH
+);
 
 const recipeBaseSchema = z
 	.object({
@@ -56,6 +69,7 @@ const recipeBaseSchema = z
 		steps: z.array(z.string().trim().max(2000)).max(500).optional(),
 		notes: z.string().max(10_000).optional(),
 		photoDataUrl: z.union([z.string().max(35_000_000), z.null()]).optional(),
+		photoThumbnailDataUrl: z.union([z.string().max(PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH), z.null()]).optional(),
 		tags: z.array(z.string().trim().min(1).max(64)).max(50).optional()
 	})
 	.strict();
@@ -184,6 +198,7 @@ CREATE TABLE IF NOT EXISTS recipes (
 	description TEXT DEFAULT '',
 	author TEXT DEFAULT '',
 	photo BLOB,
+	photo_thumbnail BLOB,
 	uses INTEGER DEFAULT 0,
 	servings INTEGER DEFAULT 1,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -242,6 +257,7 @@ db.exec(schema);
 
 const columnDefinitions = {
 	recipes: {
+		photo_thumbnail: 'BLOB',
 		servings: 'INTEGER DEFAULT 1'
 	},
 	ingredients: {
@@ -269,6 +285,7 @@ function ensureColumn<T extends keyof ColumnDefinitions>(table: T, column: keyof
 	}
 }
 
+ensureColumn('recipes', 'photo_thumbnail');
 ensureColumn('recipes', 'servings');
 ensureColumn('ingredients', 'ingredient_id');
 ensureColumn('ingredients', 'quantity');
@@ -657,7 +674,7 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const { cookbookId } = parsed.data;
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, photo, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, COALESCE(photo_thumbnail, photo) AS photo, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
 			 ORDER BY LOWER(title) ASC, id ASC`,
 			cookbookId
@@ -708,7 +725,7 @@ export const app = new Elysia({
 		}
 		const limitClause = hasTerm ? 'LIMIT 200' : '';
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.photo, r.uses, r.servings, r.created_at
+			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, COALESCE(r.photo_thumbnail, r.photo) AS photo, r.uses, r.servings, r.created_at
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 ${whereClause}
@@ -768,15 +785,19 @@ export const app = new Elysia({
 	.post('/api/recipes', ({ body, set }) => {
 		const parsed = recipeCreateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
+		if (parsed.data.photoThumbnailDataUrl != null && !parsed.data.photoDataUrl) {
+			return badRequest(set, 'photoThumbnailDataUrl requires supplied photoDataUrl');
+		}
 		const create = (payload: RecipeCreateInput) => {
 			const info = runStatement(
-				`INSERT INTO recipes (cookbook_id, title, description, author, photo, servings)
-				 VALUES (?,?,?,?,?,?)`,
+				`INSERT INTO recipes (cookbook_id, title, description, author, photo, photo_thumbnail, servings)
+				 VALUES (?,?,?,?,?,?,?)`,
 				payload.cookbook_id,
 				payload.title,
 				payload.description ?? '',
 				payload.author ?? '',
 				payload.photoDataUrl ?? null,
+				payload.photoDataUrl ? payload.photoThumbnailDataUrl ?? null : null,
 				payload.servings ?? 1
 			);
 			const recipeId = Number(info.lastInsertRowid);
@@ -799,6 +820,14 @@ export const app = new Elysia({
 		if (!exists) return notFound(set);
 		const parsed = recipeUpdateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
+		const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoDataUrl');
+		const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoThumbnailDataUrl');
+		if (hasPhotoThumbnailDataUrl && parsed.data.photoThumbnailDataUrl != null) {
+			const hasFullPhoto = hasPhotoDataUrl
+				? parsed.data.photoDataUrl !== null
+				: (getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null) !== null;
+			if (!hasFullPhoto) return badRequest(set, 'photoThumbnailDataUrl requires an existing or supplied photoDataUrl');
+		}
 		const update = (payload: RecipeUpdateInput) => {
 			const updates: string[] = [];
 			const params: (string | number | null)[] = [];
@@ -814,9 +843,23 @@ export const app = new Elysia({
 				updates.push('author = ?');
 				params.push(payload.author);
 			}
-			if (Object.prototype.hasOwnProperty.call(payload, 'photoDataUrl')) {
+			if (hasPhotoDataUrl) {
 				updates.push('photo = ?');
 				params.push(payload.photoDataUrl ?? null);
+				if (!hasPhotoThumbnailDataUrl && payload.photoDataUrl === null) {
+					updates.push('photo_thumbnail = ?');
+					params.push(null);
+				} else if (!hasPhotoThumbnailDataUrl) {
+					const currentPhoto = getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null;
+					if (payload.photoDataUrl !== currentPhoto) {
+						updates.push('photo_thumbnail = ?');
+						params.push(null);
+					}
+				}
+			}
+			if (hasPhotoThumbnailDataUrl) {
+				updates.push('photo_thumbnail = ?');
+				params.push(hasPhotoDataUrl && payload.photoDataUrl === null ? null : payload.photoThumbnailDataUrl ?? null);
 			}
 			if (payload.servings !== undefined) {
 				updates.push('servings = ?');

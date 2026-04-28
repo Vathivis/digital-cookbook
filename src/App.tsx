@@ -13,6 +13,10 @@ import { Sun, Moon } from 'lucide-react';
 import { useFlipList } from './hooks/useFlipList';
 import { useAnimatedItems } from './hooks/useAnimatedItems';
 import { filterAndSortRecipes, type SortMode, type FilterMode } from './lib/filters';
+import { shouldApplyRecipeReload, shouldStartRecipeReload } from './lib/reloadGuards';
+
+const ACTIVE_COOKBOOK_STORAGE_KEY = 'digital-cookbook.activeCookbookId';
+const ACTIVE_COOKBOOK_QUERY_KEY = 'cookbookId';
 
 interface Recipe {
 	id: number;
@@ -51,9 +55,32 @@ const computePillStyle = (value: string, selected: boolean, theme: 'light' | 'da
 	};
 };
 
+const readStoredCookbookId = () => {
+	if (typeof window !== 'undefined') {
+		const fromUrl = Number(new URLSearchParams(window.location.search).get(ACTIVE_COOKBOOK_QUERY_KEY));
+		if (Number.isInteger(fromUrl) && fromUrl > 0) return fromUrl;
+	}
+	if (typeof localStorage === 'undefined') return null;
+	const raw = localStorage.getItem(ACTIVE_COOKBOOK_STORAGE_KEY);
+	if (!raw) return null;
+	const id = Number(raw);
+	return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+const writeActiveCookbookUrl = (id: number | null) => {
+	if (typeof window === 'undefined') return;
+	const url = new URL(window.location.href);
+	if (id == null) {
+		url.searchParams.delete(ACTIVE_COOKBOOK_QUERY_KEY);
+	} else {
+		url.searchParams.set(ACTIVE_COOKBOOK_QUERY_KEY, String(id));
+	}
+	window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+};
+
 function App() {
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
-	const [activeCookbook, setActiveCookbook] = useState<number | null>(null);
+	const [activeCookbook, setActiveCookbook] = useState<number | null>(readStoredCookbookId);
 	const [query, setQuery] = useState('');
 	const [allRecipes, setAllRecipes] = useState<Recipe[]>([]);
 	const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -92,16 +119,40 @@ function App() {
 		return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
 	}, []);
 	const queryRef = useRef(query);
+	const activeCookbookRef = useRef(activeCookbook);
+	const reloadRequestRef = useRef(0);
 	useEffect(() => {
 		queryRef.current = query;
 	}, [query]);
+	activeCookbookRef.current = activeCookbook;
 	const reload = useCallback(
 		(overrideQuery?: string) => {
-			if (!activeCookbook) return Promise.resolve();
+			const cookbookId = activeCookbook;
+			if (!cookbookId) return Promise.resolve();
+			if (!authStatus) return Promise.resolve();
 			if (authStatus?.enabled && !authStatus.authenticated) return Promise.resolve();
 			const q = (overrideQuery ?? queryRef.current).trim();
+			if (!shouldStartRecipeReload({
+				cookbookId,
+				activeCookbookId: activeCookbookRef.current,
+				query: q,
+				currentQuery: queryRef.current
+			})) {
+				return Promise.resolve();
+			}
+			const requestId = ++reloadRequestRef.current;
 			const run = async () => {
-				const data = q ? await searchRecipes(activeCookbook, q) : await getRecipes(activeCookbook);
+				const data = q ? await searchRecipes(cookbookId, q) : await getRecipes(cookbookId);
+				if (!shouldApplyRecipeReload({
+					requestId,
+					latestRequestId: reloadRequestRef.current,
+					cookbookId,
+					activeCookbookId: activeCookbookRef.current,
+					query: q,
+					currentQuery: queryRef.current
+				})) {
+					return;
+				}
 				setAllRecipes(data);
 			};
 			return run();
@@ -116,6 +167,15 @@ function App() {
 	const handleCookbookSelect = useCallback((id: number | null) => {
 		setActiveCookbook(id);
 	}, []);
+	useEffect(() => {
+		writeActiveCookbookUrl(activeCookbook);
+		if (typeof localStorage === 'undefined') return;
+		if (activeCookbook == null) {
+			localStorage.removeItem(ACTIVE_COOKBOOK_STORAGE_KEY);
+		} else {
+			localStorage.setItem(ACTIVE_COOKBOOK_STORAGE_KEY, String(activeCookbook));
+		}
+	}, [activeCookbook]);
 	const handleLogout = useCallback(async () => {
 		try {
 			await logout();

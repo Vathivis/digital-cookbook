@@ -1,9 +1,12 @@
 ARG VITE_BASE_PATH=/cookbook/
+ARG VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=2000000
 
 FROM oven/bun:alpine AS build
 WORKDIR /app
 ARG VITE_BASE_PATH
+ARG VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH
 ENV VITE_BASE_PATH=${VITE_BASE_PATH}
+ENV VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=${VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH}
 
 # Install deps (cache-friendly)
 COPY package.json bun.lockb bun.lock ./
@@ -30,6 +33,7 @@ ENV HOST=0.0.0.0
 ENV COOKBOOK_BASE_PATH=${VITE_BASE_PATH}
 # Persist DB by mounting /app/data (or override COOKBOOK_DB_PATH)
 ENV COOKBOOK_DB_PATH=/app/data/cookbook.db
+ENV PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=2000000
 
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=prod-deps /app/node_modules ./node_modules

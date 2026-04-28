@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { listCookbooks, createCookbook, renameCookbook, deleteCookbook } from '../lib/api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,6 +13,7 @@ interface Props {
 
 export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 	const [cookbooks, setCookbooks] = useState<{ id: number; name: string }[]>([]);
+	const [loaded, setLoaded] = useState(false);
 	const [adding, setAdding] = useState(false);
 	const [name, setName] = useState('');
 	const [renameId, setRenameId] = useState<number | null>(null);
@@ -21,19 +22,31 @@ export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 	const [deleteConfirm, setDeleteConfirm] = useState('');
 
 	useEffect(() => {
+		let active = true;
 		(async () => {
-			setCookbooks(await listCookbooks());
+			try {
+				const list = await listCookbooks();
+				if (active) setCookbooks(list);
+			} catch (error) {
+				console.error('Failed to load cookbooks', error);
+			} finally {
+				if (active) setLoaded(true);
+			}
 		})();
+		return () => { active = false; };
 	}, []);
 
 	useEffect(() => {
+		if (!loaded) return;
 		const next = deriveNextCookbookId(activeCookbookId, cookbooks);
 		if (next !== activeCookbookId) onSelect(next);
-	}, [cookbooks, activeCookbookId, onSelect]);
+	}, [loaded, cookbooks, activeCookbookId, onSelect]);
 
-	const submit = async () => {
-		if (!name.trim()) return;
-		await createCookbook(name.trim());
+	const submit = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		const submittedName = String(new FormData(event.currentTarget).get('name') ?? '');
+		if (!submittedName.trim()) return;
+		await createCookbook(submittedName.trim());
 		setName('');
 		setAdding(false);
 		setCookbooks(await listCookbooks());
@@ -127,13 +140,13 @@ export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 				})}
 			</ul>
 			{adding ? (
-				<div className="mt-auto flex flex-col gap-2">
-					<Input value={name} placeholder="Name" onChange={e => setName(e.target.value)} />
+				<form className="mt-auto flex flex-col gap-2" onSubmit={submit}>
+					<Input name="name" value={name} placeholder="Name" onChange={e => setName(e.target.value)} />
 					<div className="flex gap-2">
-						<Button size="sm" onClick={submit}>Save</Button>
-						<Button size="sm" variant="outline" onClick={() => setAdding(false)}>Cancel</Button>
+						<Button size="sm" type="submit">Save</Button>
+						<Button size="sm" type="button" variant="outline" onClick={() => setAdding(false)}>Cancel</Button>
 					</div>
-				</div>
+				</form>
 			) : (
 				<Button variant="default" className="mt-auto w-full" onClick={() => setAdding(true)}>Add Cookbook</Button>
 			)}
