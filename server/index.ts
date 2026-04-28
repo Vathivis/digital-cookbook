@@ -661,7 +661,7 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const { cookbookId } = parsed.data;
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, photo_thumbnail AS photo, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, COALESCE(photo_thumbnail, photo) AS photo, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
 			 ORDER BY LOWER(title) ASC, id ASC`,
 			cookbookId
@@ -712,7 +712,7 @@ export const app = new Elysia({
 		}
 		const limitClause = hasTerm ? 'LIMIT 200' : '';
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.photo_thumbnail AS photo, r.uses, r.servings, r.created_at
+			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, COALESCE(r.photo_thumbnail, r.photo) AS photo, r.uses, r.servings, r.created_at
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 ${whereClause}
