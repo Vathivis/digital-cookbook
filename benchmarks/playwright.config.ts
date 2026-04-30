@@ -7,6 +7,14 @@ const mode = process.env.BENCHMARK_MODE ?? 'local-throttled';
 const apiPort = process.env.BENCHMARK_API_PORT ?? '4000';
 const webPort = process.env.BENCHMARK_WEB_PORT ?? '5173';
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const forceArg = process.env.BENCHMARK_FORCE === 'true' ? ' --force' : '';
+const viteEnv: Record<string, string> = {};
+
+for (const [key, value] of Object.entries(process.env)) {
+	if (value != null) viteEnv[key] = value;
+}
+
+viteEnv.VITE_API_PROXY_TARGET = `http://127.0.0.1:${apiPort}`;
 
 export default defineConfig({
 	testDir: '.',
@@ -22,7 +30,7 @@ export default defineConfig({
 	},
 	webServer: [
 		{
-			command: `bun benchmarks/server.ts --seed --profile ${profile} --mode ${mode} --api-port ${apiPort}`,
+			command: `bun benchmarks/server.ts --seed --profile ${profile} --mode ${mode} --api-port ${apiPort}${forceArg}`,
 			cwd: projectRoot,
 			url: `http://127.0.0.1:${apiPort}/api/health`,
 			reuseExistingServer: false,
@@ -31,6 +39,7 @@ export default defineConfig({
 		{
 			command: `bun run dev -- --host 127.0.0.1 --port ${webPort}`,
 			cwd: projectRoot,
+			env: viteEnv,
 			url: `http://127.0.0.1:${webPort}`,
 			reuseExistingServer: false,
 			timeout: 120_000,

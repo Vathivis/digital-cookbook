@@ -24,6 +24,10 @@ for (const [argName, envName] of Object.entries(envMap)) {
 	if (value != null && value !== 'true') env[envName] = value;
 }
 
+if (args.has('force')) {
+	env.BENCHMARK_FORCE = 'true';
+}
+
 const child = Bun.spawn(['bunx', 'playwright', 'test', '-c', 'benchmarks/playwright.config.ts'], {
 	stdout: 'inherit',
 	stderr: 'inherit',
