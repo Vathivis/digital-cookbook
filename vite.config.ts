@@ -9,6 +9,8 @@ const normalizeBasePath = (value: string | undefined) => {
   return `/${trimmed.replace(/^\/+|\/+$/g, '')}/`
 }
 
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || 'http://localhost:4000'
+
 // https://vite.dev/config/
 export default defineConfig({
   base: normalizeBasePath(process.env.VITE_BASE_PATH),
@@ -21,7 +23,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: apiProxyTarget,
         changeOrigin: true,
       }
     }

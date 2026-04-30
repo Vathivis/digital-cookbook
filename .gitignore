@@ -29,3 +29,6 @@ dist-ssr
 .tmp-tests
 todo.md
 *.db*
+benchmark-results/
+test-results/
+*_plan.md
