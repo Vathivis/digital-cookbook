@@ -26,7 +26,6 @@ interface RecipeRecord {
 	title: string;
 	description: string;
 	author: string;
-	photo: string | null;
 	uses: number;
 	servings: number;
 	created_at: string;
@@ -103,6 +102,11 @@ const loginSchema = z
 
 type RecipeCreateInput = z.infer<typeof recipeCreateSchema>;
 type RecipeUpdateInput = z.infer<typeof recipeUpdateSchema>;
+
+const photoVariants = ['full', 'thumbnail_card', 'thumbnail_detail'] as const;
+type PhotoVariant = (typeof photoVariants)[number];
+const photoVariantSchema = z.enum(photoVariants);
+const photoParamSchema = idParamSchema.extend({ variant: photoVariantSchema });
 
 const PORT = Number(process.env.PORT) || 4000;
 const AUTH_COOKIE_NAME = 'dc_auth';
@@ -197,8 +201,6 @@ CREATE TABLE IF NOT EXISTS recipes (
 	title TEXT NOT NULL,
 	description TEXT DEFAULT '',
 	author TEXT DEFAULT '',
-	photo BLOB,
-	photo_thumbnail BLOB,
 	uses INTEGER DEFAULT 0,
 	servings INTEGER DEFAULT 1,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -252,12 +254,20 @@ CREATE TABLE IF NOT EXISTS recipe_likes (
 	UNIQUE(recipe_id, name),
 	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS recipe_photo_variants (
+	recipe_id INTEGER NOT NULL,
+	variant TEXT NOT NULL CHECK (variant IN ('full', 'thumbnail_card', 'thumbnail_detail')),
+	data_url TEXT NOT NULL,
+	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(recipe_id, variant),
+	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+);
 `;
 db.exec(schema);
 
 const columnDefinitions = {
 	recipes: {
-		photo_thumbnail: 'BLOB',
 		servings: 'INTEGER DEFAULT 1'
 	},
 	ingredients: {
@@ -285,7 +295,6 @@ function ensureColumn<T extends keyof ColumnDefinitions>(table: T, column: keyof
 	}
 }
 
-ensureColumn('recipes', 'photo_thumbnail');
 ensureColumn('recipes', 'servings');
 ensureColumn('ingredients', 'ingredient_id');
 ensureColumn('ingredients', 'quantity');
@@ -294,6 +303,57 @@ ensureColumn('ingredients', 'name');
 
 runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_recipe_id ON ingredients(recipe_id)');
 runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_ingredient_id ON ingredients(ingredient_id)');
+runStatement(
+	'CREATE INDEX IF NOT EXISTS idx_recipe_photo_variants_list ON recipe_photo_variants(recipe_id, variant, updated_at)'
+);
+
+const tableHasColumn = (table: string, column: string) => {
+	const quotedTable = `"${table.replace(/"/g, '""')}"`;
+	const info = allStatement<{ name: string }>(`PRAGMA table_info(${quotedTable})`);
+	return info.some((entry) => entry.name === column);
+};
+
+const hasLegacyPhotoColumn = tableHasColumn('recipes', 'photo');
+const hasLegacyPhotoThumbnailColumn = tableHasColumn('recipes', 'photo_thumbnail');
+
+if (hasLegacyPhotoColumn || hasLegacyPhotoThumbnailColumn) {
+	runTransaction(() => {
+		if (hasLegacyPhotoColumn) {
+			runStatement(
+				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
+				 SELECT id, 'full', photo, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				 FROM recipes
+				 WHERE photo IS NOT NULL AND photo <> ''`
+			);
+		}
+		if (hasLegacyPhotoThumbnailColumn) {
+			runStatement(
+				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
+				 SELECT id, 'thumbnail_card', photo_thumbnail, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				 FROM recipes
+				 WHERE photo_thumbnail IS NOT NULL AND photo_thumbnail <> ''`
+			);
+		}
+		if (hasLegacyPhotoColumn) {
+			runStatement(
+				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
+				 SELECT id, 'thumbnail_card', photo, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				 FROM recipes
+				 WHERE photo IS NOT NULL AND photo <> ''`
+			);
+			runStatement('UPDATE recipes SET photo = NULL WHERE photo IS NOT NULL');
+		}
+		if (hasLegacyPhotoThumbnailColumn) {
+			runStatement('UPDATE recipes SET photo_thumbnail = NULL WHERE photo_thumbnail IS NOT NULL');
+		}
+	});
+}
+runStatement(
+	`DELETE FROM recipe_photo_variants
+	 WHERE NOT EXISTS (
+	 	SELECT 1 FROM recipes WHERE recipes.id = recipe_photo_variants.recipe_id
+	 )`
+);
 
 try {
 	runTransaction(() => {
@@ -493,6 +553,95 @@ const buildLogoutCookie = (request: Request) => {
 	return parts.join('; ');
 };
 
+const recipePhotoUrl = (recipeId: number, variant: PhotoVariant, version?: string | null) => {
+	const suffix = version ? `?v=${encodeURIComponent(version)}` : '';
+	return `/api/recipes/${recipeId}/photos/${variant}${suffix}`;
+};
+
+const upsertRecipePhotoVariant = (recipeId: number, variant: PhotoVariant, dataUrl: string) => {
+	const now = new Date().toISOString();
+	runStatement(
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(recipe_id, variant) DO UPDATE SET
+		 	data_url = excluded.data_url,
+		 	updated_at = excluded.updated_at`,
+		recipeId,
+		variant,
+		dataUrl,
+		now,
+		now
+	);
+};
+
+const deleteRecipePhotoVariants = (recipeId: number) => {
+	runStatement('DELETE FROM recipe_photo_variants WHERE recipe_id = ?', recipeId);
+};
+
+const getRecipePhotoVariant = (recipeId: number, variant: PhotoVariant) =>
+	getStatement<{ dataUrl: string; updatedAt: string | null }>(
+		`SELECT data_url as dataUrl, updated_at as updatedAt
+		 FROM recipe_photo_variants
+		 WHERE recipe_id = ? AND variant = ?`,
+		recipeId,
+		variant
+	);
+
+const fetchPhotoUrls = (ids: number[]) => {
+	if (!ids.length) return {} as Record<number, { full?: string; thumbnail_card?: string; thumbnail_detail?: string }>;
+	const placeholders = ids.map(() => '?').join(',');
+	const rows = allStatement<{ recipeId: number; variant: PhotoVariant; updatedAt: string | null }>(
+		`SELECT recipe_id as recipeId, variant as variant, updated_at as updatedAt
+		 FROM recipe_photo_variants
+		 WHERE recipe_id IN (${placeholders})`,
+		...ids
+	);
+	const grouped: Record<number, { full?: string; thumbnail_card?: string; thumbnail_detail?: string }> = {};
+	for (const row of rows) {
+		if (!photoVariants.includes(row.variant)) continue;
+		const variants = grouped[row.recipeId] ?? (grouped[row.recipeId] = {});
+		variants[row.variant] = recipePhotoUrl(row.recipeId, row.variant, row.updatedAt);
+	}
+	return grouped;
+};
+
+const withRecipeMetadata = (recipes: RecipeRecord[]) => {
+	if (!recipes.length) return [];
+	const ids = recipes.map((r) => r.id as number);
+	const tagsBy = fetchTags(ids);
+	const likesBy = fetchLikes(ids);
+	const ingredientsBy = fetchIngredientNames(ids);
+	const photosBy = fetchPhotoUrls(ids);
+	return recipes.map((r) => {
+		const photos = photosBy[r.id] ?? {};
+		return {
+			...r,
+			photo: photos.thumbnail_card ?? null,
+			photoFull: photos.full ?? null,
+			photoDetail: photos.thumbnail_detail ?? null,
+			hasPhoto: Boolean(photos.full || photos.thumbnail_card || photos.thumbnail_detail),
+			tags: tagsBy[r.id] || [],
+			likes: likesBy[r.id] || [],
+			ingredientNames: ingredientsBy[r.id] || []
+		};
+	});
+};
+
+const parseDataUrl = (dataUrl: string) => {
+	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+	if (!match) {
+		return {
+			contentType: 'application/octet-stream',
+			body: new TextEncoder().encode(dataUrl)
+		};
+	}
+	const contentType = match[1] || 'application/octet-stream';
+	const isBase64 = Boolean(match[2]);
+	const data = match[3] ?? '';
+	const body = isBase64 ? Buffer.from(data, 'base64') : new TextEncoder().encode(decodeURIComponent(data));
+	return { contentType, body };
+};
+
 const fetchIngredientNames = (ids: number[]) => {
 	if (!ids.length) return {} as Record<number, string[]>;
 	const placeholders = ids.map(() => '?').join(',');
@@ -674,22 +823,12 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const { cookbookId } = parsed.data;
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, COALESCE(photo_thumbnail, photo) AS photo, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
 			 ORDER BY LOWER(title) ASC, id ASC`,
 			cookbookId
 		);
-		if (!recipes.length) return [];
-		const ids = recipes.map((r) => r.id as number);
-		const tagsBy = fetchTags(ids);
-		const likesBy = fetchLikes(ids);
-		const ingredientsBy = fetchIngredientNames(ids);
-		return recipes.map((r) => ({
-			...r,
-			tags: tagsBy[r.id] || [],
-			likes: likesBy[r.id] || [],
-			ingredientNames: ingredientsBy[r.id] || []
-		}));
+		return withRecipeMetadata(recipes);
 	})
 	.get('/api/recipes/search', ({ query, set }) => {
 		const parsed = recipeSearchSchema.safeParse(query);
@@ -725,7 +864,7 @@ export const app = new Elysia({
 		}
 		const limitClause = hasTerm ? 'LIMIT 200' : '';
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, COALESCE(r.photo_thumbnail, r.photo) AS photo, r.uses, r.servings, r.created_at
+			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.uses, r.servings, r.created_at
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 ${whereClause}
@@ -733,24 +872,30 @@ export const app = new Elysia({
 			 ${limitClause}`,
 			...params
 		);
-		if (!recipes.length) return [];
-		const ids = recipes.map((r) => r.id as number);
-		const tagsBy = fetchTags(ids);
-		const likesBy = fetchLikes(ids);
-		const ingredientsBy = fetchIngredientNames(ids);
-		return recipes.map((r) => ({
-			...r,
-			tags: tagsBy[r.id] || [],
-			likes: likesBy[r.id] || [],
-			ingredientNames: ingredientsBy[r.id] || []
-		}));
+		return withRecipeMetadata(recipes);
+	})
+	.get('/api/recipes/:id/photos/:variant', ({ params, set }) => {
+		const parsed = photoParamSchema.safeParse(params);
+		if (!parsed.success) return validationError(set, parsed.error);
+		const { id, variant } = parsed.data;
+		const exists = getStatement<{ id: number }>('SELECT id FROM recipes WHERE id = ?', id);
+		if (!exists) return notFound(set);
+		const photo = getRecipePhotoVariant(id, variant);
+		if (!photo) return notFound(set);
+		const parsedPhoto = parseDataUrl(photo.dataUrl);
+		return new Response(parsedPhoto.body, {
+			headers: {
+				'Cache-Control': 'private, max-age=31536000, immutable',
+				'Content-Type': parsedPhoto.contentType
+			}
+		});
 	})
 	.get('/api/recipes/:id', ({ params, set }) => {
 		const parsed = idParamSchema.safeParse(params);
 		if (!parsed.success) return validationError(set, parsed.error);
 		const id = parsed.data.id;
 		const recipe = getStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, photo, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
 			 FROM recipes WHERE id=?`,
 			id
 		);
@@ -780,7 +925,20 @@ export const app = new Elysia({
 		const ingredientNames = ingredientsRows
 			.map((row) => (row.name && row.name.trim()) || row.line.trim())
 			.filter((v, idx, arr) => v && arr.indexOf(v) === idx);
-		return { ...recipe, ingredients, ingredientNames, steps, notes: noteRow?.content || '', tags, likes };
+		const photos = fetchPhotoUrls([id])[id] ?? {};
+		return {
+			...recipe,
+			photo: photos.full ?? photos.thumbnail_card ?? null,
+			photoFull: photos.full ?? null,
+			photoDetail: photos.thumbnail_detail ?? null,
+			hasPhoto: Boolean(photos.full || photos.thumbnail_card || photos.thumbnail_detail),
+			ingredients,
+			ingredientNames,
+			steps,
+			notes: noteRow?.content || '',
+			tags,
+			likes
+		};
 	})
 	.post('/api/recipes', ({ body, set }) => {
 		const parsed = recipeCreateSchema.safeParse(body ?? {});
@@ -790,17 +948,19 @@ export const app = new Elysia({
 		}
 		const create = (payload: RecipeCreateInput) => {
 			const info = runStatement(
-				`INSERT INTO recipes (cookbook_id, title, description, author, photo, photo_thumbnail, servings)
-				 VALUES (?,?,?,?,?,?,?)`,
+				`INSERT INTO recipes (cookbook_id, title, description, author, servings)
+				 VALUES (?,?,?,?,?)`,
 				payload.cookbook_id,
 				payload.title,
 				payload.description ?? '',
 				payload.author ?? '',
-				payload.photoDataUrl ?? null,
-				payload.photoDataUrl ? payload.photoThumbnailDataUrl ?? null : null,
 				payload.servings ?? 1
 			);
 			const recipeId = Number(info.lastInsertRowid);
+			if (payload.photoDataUrl) {
+				upsertRecipePhotoVariant(recipeId, 'full', payload.photoDataUrl);
+				upsertRecipePhotoVariant(recipeId, 'thumbnail_card', payload.photoThumbnailDataUrl ?? payload.photoDataUrl);
+			}
 			insertIngredients(recipeId, payload.ingredients ?? []);
 			insertSteps(recipeId, payload.steps ?? []);
 			if (payload.notes?.trim()) {
@@ -825,7 +985,7 @@ export const app = new Elysia({
 		if (hasPhotoThumbnailDataUrl && parsed.data.photoThumbnailDataUrl != null) {
 			const hasFullPhoto = hasPhotoDataUrl
 				? parsed.data.photoDataUrl !== null
-				: (getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null) !== null;
+				: getRecipePhotoVariant(id, 'full') !== null;
 			if (!hasFullPhoto) return badRequest(set, 'photoThumbnailDataUrl requires an existing or supplied photoDataUrl');
 		}
 		const update = (payload: RecipeUpdateInput) => {
@@ -844,22 +1004,22 @@ export const app = new Elysia({
 				params.push(payload.author);
 			}
 			if (hasPhotoDataUrl) {
-				updates.push('photo = ?');
-				params.push(payload.photoDataUrl ?? null);
-				if (!hasPhotoThumbnailDataUrl && payload.photoDataUrl === null) {
-					updates.push('photo_thumbnail = ?');
-					params.push(null);
-				} else if (!hasPhotoThumbnailDataUrl) {
-					const currentPhoto = getStatement<{ photo: string | null }>('SELECT photo FROM recipes WHERE id = ?', id)?.photo ?? null;
-					if (payload.photoDataUrl !== currentPhoto) {
-						updates.push('photo_thumbnail = ?');
-						params.push(null);
+				if (payload.photoDataUrl === null) {
+					deleteRecipePhotoVariants(id);
+				} else if (payload.photoDataUrl) {
+					const currentPhoto = getRecipePhotoVariant(id, 'full')?.dataUrl ?? null;
+					upsertRecipePhotoVariant(id, 'full', payload.photoDataUrl);
+					if (hasPhotoThumbnailDataUrl) {
+						upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl ?? payload.photoDataUrl);
+					} else if (payload.photoDataUrl !== currentPhoto) {
+						upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoDataUrl);
 					}
 				}
-			}
-			if (hasPhotoThumbnailDataUrl) {
-				updates.push('photo_thumbnail = ?');
-				params.push(hasPhotoDataUrl && payload.photoDataUrl === null ? null : payload.photoThumbnailDataUrl ?? null);
+			} else if (hasPhotoThumbnailDataUrl) {
+				const currentPhoto = getRecipePhotoVariant(id, 'full')?.dataUrl ?? null;
+				if (currentPhoto) {
+					upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl ?? currentPhoto);
+				}
 			}
 			if (payload.servings !== undefined) {
 				updates.push('servings = ?');

@@ -232,7 +232,18 @@ function clearDatabase(database: BenchmarkDatabase) {
 	database.exec('PRAGMA foreign_keys = OFF');
 	database.exec('BEGIN TRANSACTION');
 	try {
-		for (const table of ['recipe_tags', 'recipe_likes', 'ingredients', 'steps', 'notes', 'recipes', 'tags', 'ingredient_names', 'cookbooks']) {
+		for (const table of [
+			'recipe_tags',
+			'recipe_likes',
+			'recipe_photo_variants',
+			'ingredients',
+			'steps',
+			'notes',
+			'recipes',
+			'tags',
+			'ingredient_names',
+			'cookbooks',
+		]) {
 			database.exec(`DELETE FROM ${table}`);
 		}
 		database.exec("DELETE FROM sqlite_sequence WHERE name IN ('cookbooks','recipes','tags','ingredient_names','ingredients','steps','notes','recipe_likes')");
@@ -255,7 +266,11 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 
 	const insertCookbook = database.prepare('INSERT INTO cookbooks (name) VALUES (?)');
 	const insertRecipe = database.prepare(
-		'INSERT INTO recipes (cookbook_id, title, description, author, photo, photo_thumbnail, uses, servings) VALUES (?,?,?,?,?,?,?,?)'
+		'INSERT INTO recipes (cookbook_id, title, description, author, uses, servings) VALUES (?,?,?,?,?,?)'
+	);
+	const insertPhotoVariant = database.prepare(
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
+		 VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 	);
 	const insertIngredientName = database.prepare('INSERT OR IGNORE INTO ingredient_names (name) VALUES (?)');
 	const getIngredientName = database.prepare('SELECT id FROM ingredient_names WHERE name = ?');
@@ -290,12 +305,14 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 					title,
 					`Generated benchmark recipe ${recipeIndex} for measuring list, search, edit, and photo payload behavior.`,
 					`Benchmark Author ${rng.int(1, 12)}`,
-					photo,
-					thumbnail,
 					rng.int(0, 35),
 					rng.int(1, 8)
 				)
 			);
+			if (photo) {
+				insertPhotoVariant.run(recipeId, 'full', photo);
+				insertPhotoVariant.run(recipeId, 'thumbnail_card', thumbnail ?? photo);
+			}
 
 			const ingredientCount = rng.int(options.minIngredients, options.maxIngredients);
 			const selectedIngredients = rng.sample(ingredients, ingredientCount);
@@ -344,6 +361,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 		for (const statement of [
 			insertCookbook,
 			insertRecipe,
+			insertPhotoVariant,
 			insertIngredientName,
 			getIngredientName,
 			insertIngredient,

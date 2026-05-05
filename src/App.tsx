@@ -25,6 +25,9 @@ interface Recipe {
 	description: string;
 	author: string;
 	photo?: string | null;
+	photoFull?: string | null;
+	photoDetail?: string | null;
+	hasPhoto?: boolean;
 	uses: number;
 	created_at: string;
 	tags: string[];

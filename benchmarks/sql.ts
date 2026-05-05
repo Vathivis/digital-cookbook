@@ -46,7 +46,7 @@ if (import.meta.main) {
 		runQueryPlan(
 			db,
 			'recipes:list',
-			`SELECT id, cookbook_id, title, description, author, COALESCE(photo_thumbnail, photo) AS photo, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
 			 ORDER BY LOWER(title) ASC, id ASC`,
 			[1]
@@ -56,7 +56,7 @@ if (import.meta.main) {
 		runQueryPlan(
 			db,
 			'recipes:search:title-description',
-			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, COALESCE(r.photo_thumbnail, r.photo) AS photo, r.uses, r.servings, r.created_at
+			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.uses, r.servings, r.created_at
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 AND (LOWER(r.title) LIKE ? ESCAPE '\\' OR LOWER(r.description) LIKE ? ESCAPE '\\')
@@ -83,6 +83,16 @@ if (import.meta.main) {
 		)
 	);
 	if (ids.length) {
+		plans.push(
+			runQueryPlan(
+				db,
+				'metadata:photo-urls-batch',
+				`SELECT recipe_id as recipeId, variant as variant, updated_at as updatedAt
+				 FROM recipe_photo_variants
+				 WHERE recipe_id IN (${placeholders})`,
+				ids
+			)
+		);
 		plans.push(
 			runQueryPlan(
 				db,
