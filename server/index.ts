@@ -257,7 +257,8 @@ CREATE TABLE IF NOT EXISTS recipe_likes (
 CREATE TABLE IF NOT EXISTS recipe_photo_variants (
 	recipe_id INTEGER NOT NULL,
 	variant TEXT NOT NULL CHECK (variant IN ('full', 'thumbnail_card', 'thumbnail_detail')),
-	data_url TEXT NOT NULL,
+	content_type TEXT NOT NULL,
+	data BLOB NOT NULL,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 	updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
 	PRIMARY KEY(recipe_id, variant),
@@ -265,6 +266,92 @@ CREATE TABLE IF NOT EXISTS recipe_photo_variants (
 );
 `;
 db.exec(schema);
+
+type TableColumn = { name: string };
+type LegacyPhotoVariantRow = {
+	recipeId: number;
+	variant: string;
+	dataUrl: string;
+	createdAt: string | null;
+	updatedAt: string | null;
+};
+
+const photoVariantTableSql = (tableName: string) => `
+CREATE TABLE IF NOT EXISTS ${tableName} (
+	recipe_id INTEGER NOT NULL,
+	variant TEXT NOT NULL CHECK (variant IN ('full', 'thumbnail_card', 'thumbnail_detail')),
+	content_type TEXT NOT NULL,
+	data BLOB NOT NULL,
+	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY(recipe_id, variant),
+	FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+)`;
+
+const tableColumns = (table: string) => {
+	const quotedTable = `"${table.replace(/"/g, '""')}"`;
+	return allStatement<TableColumn>(`PRAGMA table_info(${quotedTable})`);
+};
+
+function migrateRecipePhotoVariantsToBlobStorage() {
+	const columns = tableColumns('recipe_photo_variants');
+	const hasContentType = columns.some((entry) => entry.name === 'content_type');
+	const hasData = columns.some((entry) => entry.name === 'data');
+	const hasDataUrl = columns.some((entry) => entry.name === 'data_url');
+	if (hasContentType && hasData && !hasDataUrl) return;
+
+	const migrationTable = 'recipe_photo_variants_blob_migration';
+	db.exec('PRAGMA foreign_keys = OFF');
+	try {
+		db.exec('BEGIN TRANSACTION');
+		if (process.env.BENCHMARK_RESET_PHOTO_VARIANTS === 'true') {
+			db.exec('DROP TABLE IF EXISTS recipe_photo_variants');
+			db.exec(photoVariantTableSql('recipe_photo_variants'));
+			db.exec('COMMIT');
+			return;
+		}
+		db.exec(`DROP TABLE IF EXISTS ${migrationTable}`);
+		db.exec(photoVariantTableSql(migrationTable));
+		if (hasContentType && hasData) {
+			runStatement(
+				`INSERT OR IGNORE INTO ${migrationTable} (recipe_id, variant, content_type, data, created_at, updated_at)
+				 SELECT recipe_id, variant, content_type, data, created_at, updated_at
+				 FROM recipe_photo_variants
+				 WHERE data IS NOT NULL`
+			);
+		} else if (hasDataUrl) {
+			const select = db.prepare(
+				`SELECT recipe_id as recipeId, variant, data_url as dataUrl, created_at as createdAt, updated_at as updatedAt
+				 FROM recipe_photo_variants
+				 WHERE data_url IS NOT NULL AND data_url <> ''`
+			) as StatementType & { iterate: () => Iterable<LegacyPhotoVariantRow> };
+			const insert = db.prepare(
+				`INSERT OR IGNORE INTO ${migrationTable} (recipe_id, variant, content_type, data, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?)`
+			);
+			try {
+				for (const row of select.iterate()) {
+					if (!photoVariants.includes(row.variant as PhotoVariant)) continue;
+					const photo = dataUrlToStoredPhoto(row.dataUrl);
+					insert.run(row.recipeId, row.variant, photo.contentType, photo.data, row.createdAt, row.updatedAt);
+				}
+			} finally {
+				select.finalize();
+				insert.finalize();
+			}
+		}
+		db.exec('DROP TABLE recipe_photo_variants');
+		db.exec(`ALTER TABLE ${migrationTable} RENAME TO recipe_photo_variants`);
+		db.exec('COMMIT');
+	} catch (error) {
+		db.exec('ROLLBACK');
+		throw error;
+	} finally {
+		db.exec('PRAGMA foreign_keys = ON');
+	}
+}
+
+migrateRecipePhotoVariantsToBlobStorage();
 
 const columnDefinitions = {
 	recipes: {
@@ -313,11 +400,7 @@ runStatement(
 	'CREATE INDEX IF NOT EXISTS idx_recipe_photo_variants_list ON recipe_photo_variants(recipe_id, variant, updated_at)'
 );
 
-const tableHasColumn = (table: string, column: string) => {
-	const quotedTable = `"${table.replace(/"/g, '""')}"`;
-	const info = allStatement<{ name: string }>(`PRAGMA table_info(${quotedTable})`);
-	return info.some((entry) => entry.name === column);
-};
+const tableHasColumn = (table: string, column: string) => tableColumns(table).some((entry) => entry.name === column);
 
 const hasLegacyPhotoColumn = tableHasColumn('recipes', 'photo');
 const hasLegacyPhotoThumbnailColumn = tableHasColumn('recipes', 'photo_thumbnail');
@@ -325,28 +408,28 @@ const hasLegacyPhotoThumbnailColumn = tableHasColumn('recipes', 'photo_thumbnail
 if (hasLegacyPhotoColumn || hasLegacyPhotoThumbnailColumn) {
 	runTransaction(() => {
 		if (hasLegacyPhotoColumn) {
-			runStatement(
-				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
-				 SELECT id, 'full', photo, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-				 FROM recipes
-				 WHERE photo IS NOT NULL AND photo <> ''`
+			const rows = allStatement<{ id: number; photo: string | Uint8Array | null }>(
+				'SELECT id, photo FROM recipes WHERE photo IS NOT NULL AND photo <> ""'
 			);
+			for (const row of rows) {
+				if (row.photo) insertRecipePhotoVariantIfMissing(row.id, 'full', legacyPhotoValueToDataUrl(row.photo));
+			}
 		}
 		if (hasLegacyPhotoThumbnailColumn) {
-			runStatement(
-				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
-				 SELECT id, 'thumbnail_card', photo_thumbnail, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-				 FROM recipes
-				 WHERE photo_thumbnail IS NOT NULL AND photo_thumbnail <> ''`
+			const rows = allStatement<{ id: number; photoThumbnail: string | Uint8Array | null }>(
+				'SELECT id, photo_thumbnail as photoThumbnail FROM recipes WHERE photo_thumbnail IS NOT NULL AND photo_thumbnail <> ""'
 			);
+			for (const row of rows) {
+				if (row.photoThumbnail) insertRecipePhotoVariantIfMissing(row.id, 'thumbnail_card', legacyPhotoValueToDataUrl(row.photoThumbnail));
+			}
 		}
 		if (hasLegacyPhotoColumn) {
-			runStatement(
-				`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
-				 SELECT id, 'thumbnail_card', photo, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-				 FROM recipes
-				 WHERE photo IS NOT NULL AND photo <> ''`
+			const rows = allStatement<{ id: number; photo: string | Uint8Array | null }>(
+				'SELECT id, photo FROM recipes WHERE photo IS NOT NULL AND photo <> ""'
 			);
+			for (const row of rows) {
+				if (row.photo) insertRecipePhotoVariantIfMissing(row.id, 'thumbnail_card', legacyPhotoValueToDataUrl(row.photo));
+			}
 			runStatement('UPDATE recipes SET photo = NULL WHERE photo IS NOT NULL');
 		}
 		if (hasLegacyPhotoThumbnailColumn) {
@@ -564,34 +647,110 @@ const recipePhotoUrl = (recipeId: number, variant: PhotoVariant, version?: strin
 	return `/api/recipes/${recipeId}/photos/${variant}${suffix}`;
 };
 
-const upsertRecipePhotoVariant = (recipeId: number, variant: PhotoVariant, dataUrl: string) => {
+type StoredPhoto = {
+	contentType: string;
+	data: Buffer;
+	updatedAt?: string | null;
+};
+
+function parseDataUrl(dataUrl: string) {
+	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+	if (!match) {
+		return {
+			contentType: 'application/octet-stream',
+			body: new TextEncoder().encode(dataUrl)
+		};
+	}
+	const contentType = match[1] || 'application/octet-stream';
+	const isBase64 = Boolean(match[2]);
+	const data = match[3] ?? '';
+	const body = isBase64 ? Buffer.from(data, 'base64') : new TextEncoder().encode(decodeURIComponent(data));
+	return { contentType, body };
+}
+
+function dataUrlToStoredPhoto(dataUrl: string): StoredPhoto {
+	const parsed = parseDataUrl(dataUrl);
+	return {
+		contentType: parsed.contentType,
+		data: Buffer.from(parsed.body)
+	};
+}
+
+function legacyPhotoValueToDataUrl(value: string | Uint8Array) {
+	if (typeof value === 'string') return value;
+	return Buffer.from(value).toString('utf8');
+}
+
+function storedPhotoMatchesDataUrl(photo: StoredPhoto, dataUrl: string) {
+	const next = dataUrlToStoredPhoto(dataUrl);
+	return photo.contentType === next.contentType && Buffer.compare(Buffer.from(photo.data), next.data) === 0;
+}
+
+function upsertRecipePhotoVariant(recipeId: number, variant: PhotoVariant, dataUrl: string) {
 	const now = new Date().toISOString();
+	const photo = dataUrlToStoredPhoto(dataUrl);
 	runStatement(
-		`INSERT INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?)
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(recipe_id, variant) DO UPDATE SET
-		 	data_url = excluded.data_url,
-		 	updated_at = excluded.updated_at`,
+			content_type = excluded.content_type,
+			data = excluded.data,
+			updated_at = excluded.updated_at`,
 		recipeId,
 		variant,
-		dataUrl,
+		photo.contentType,
+		photo.data,
 		now,
 		now
 	);
-};
+}
 
-const deleteRecipePhotoVariants = (recipeId: number) => {
+function insertRecipePhotoVariantIfMissing(recipeId: number, variant: PhotoVariant, dataUrl: string) {
+	const now = new Date().toISOString();
+	const photo = dataUrlToStoredPhoto(dataUrl);
+	runStatement(
+		`INSERT OR IGNORE INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		recipeId,
+		variant,
+		photo.contentType,
+		photo.data,
+		now,
+		now
+	);
+}
+
+function copyRecipePhotoVariant(recipeId: number, fromVariant: PhotoVariant, toVariant: PhotoVariant) {
+	const now = new Date().toISOString();
+	runStatement(
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+		 SELECT recipe_id, ?, content_type, data, created_at, ?
+		 FROM recipe_photo_variants
+		 WHERE recipe_id = ? AND variant = ?
+		 ON CONFLICT(recipe_id, variant) DO UPDATE SET
+			content_type = excluded.content_type,
+			data = excluded.data,
+			updated_at = excluded.updated_at`,
+		toVariant,
+		now,
+		recipeId,
+		fromVariant
+	);
+}
+
+function deleteRecipePhotoVariants(recipeId: number) {
 	runStatement('DELETE FROM recipe_photo_variants WHERE recipe_id = ?', recipeId);
-};
+}
 
-const getRecipePhotoVariant = (recipeId: number, variant: PhotoVariant) =>
-	getStatement<{ dataUrl: string; updatedAt: string | null }>(
-		`SELECT data_url as dataUrl, updated_at as updatedAt
+function getRecipePhotoVariant(recipeId: number, variant: PhotoVariant) {
+	return getStatement<StoredPhoto>(
+		`SELECT content_type as contentType, data, updated_at as updatedAt
 		 FROM recipe_photo_variants
 		 WHERE recipe_id = ? AND variant = ?`,
 		recipeId,
 		variant
 	);
+}
 
 const fetchPhotoUrls = (ids: number[]) => {
 	if (!ids.length) return {} as Record<number, { full?: string; thumbnail_card?: string; thumbnail_detail?: string }>;
@@ -631,21 +790,6 @@ const withRecipeMetadata = (recipes: RecipeRecord[]) => {
 			ingredientNames: ingredientsBy[r.id] || []
 		};
 	});
-};
-
-const parseDataUrl = (dataUrl: string) => {
-	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
-	if (!match) {
-		return {
-			contentType: 'application/octet-stream',
-			body: new TextEncoder().encode(dataUrl)
-		};
-	}
-	const contentType = match[1] || 'application/octet-stream';
-	const isBase64 = Boolean(match[2]);
-	const data = match[3] ?? '';
-	const body = isBase64 ? Buffer.from(data, 'base64') : new TextEncoder().encode(decodeURIComponent(data));
-	return { contentType, body };
 };
 
 const fetchIngredientNames = (ids: number[]) => {
@@ -888,11 +1032,10 @@ export const app = new Elysia({
 		if (!exists) return notFound(set);
 		const photo = getRecipePhotoVariant(id, variant);
 		if (!photo) return notFound(set);
-		const parsedPhoto = parseDataUrl(photo.dataUrl);
-		return new Response(parsedPhoto.body, {
+		return new Response(photo.data, {
 			headers: {
 				'Cache-Control': 'private, max-age=31536000, immutable',
-				'Content-Type': parsedPhoto.contentType
+				'Content-Type': photo.contentType
 			}
 		});
 	})
@@ -1013,18 +1156,27 @@ export const app = new Elysia({
 				if (payload.photoDataUrl === null) {
 					deleteRecipePhotoVariants(id);
 				} else if (payload.photoDataUrl) {
-					const currentPhoto = getRecipePhotoVariant(id, 'full')?.dataUrl ?? null;
+					const currentPhoto = getRecipePhotoVariant(id, 'full') ?? null;
+					const photoChanged = !currentPhoto || !storedPhotoMatchesDataUrl(currentPhoto, payload.photoDataUrl);
 					upsertRecipePhotoVariant(id, 'full', payload.photoDataUrl);
 					if (hasPhotoThumbnailDataUrl) {
-						upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl ?? payload.photoDataUrl);
-					} else if (payload.photoDataUrl !== currentPhoto) {
+						if (payload.photoThumbnailDataUrl) {
+							upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl);
+						} else {
+							copyRecipePhotoVariant(id, 'full', 'thumbnail_card');
+						}
+					} else if (photoChanged) {
 						upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoDataUrl);
 					}
 				}
 			} else if (hasPhotoThumbnailDataUrl) {
-				const currentPhoto = getRecipePhotoVariant(id, 'full')?.dataUrl ?? null;
+				const currentPhoto = getRecipePhotoVariant(id, 'full');
 				if (currentPhoto) {
-					upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl ?? currentPhoto);
+					if (payload.photoThumbnailDataUrl) {
+						upsertRecipePhotoVariant(id, 'thumbnail_card', payload.photoThumbnailDataUrl);
+					} else {
+						copyRecipePhotoVariant(id, 'full', 'thumbnail_card');
+					}
 				}
 			}
 			if (payload.servings !== undefined) {

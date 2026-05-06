@@ -245,6 +245,76 @@ test('legacy recipe photo columns migrate into photo variants and are cleared', 
 	}
 });
 
+test('legacy photo variant data URLs migrate into blob storage', async () => {
+	const legacyDbPath = path.join(tmpDir, `legacy-photo-variant-${Date.now()}.db`);
+	const legacyDb = new Database(legacyDbPath, { create: true });
+	legacyDb.exec(`
+		PRAGMA foreign_keys = ON;
+		CREATE TABLE cookbooks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE recipes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			cookbook_id INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT DEFAULT '',
+			author TEXT DEFAULT '',
+			uses INTEGER DEFAULT 0,
+			servings INTEGER DEFAULT 1,
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(cookbook_id) REFERENCES cookbooks(id) ON DELETE CASCADE
+		);
+		CREATE TABLE recipe_photo_variants (
+			recipe_id INTEGER NOT NULL,
+			variant TEXT NOT NULL CHECK (variant IN ('full', 'thumbnail_card', 'thumbnail_detail')),
+			data_url TEXT NOT NULL,
+			created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY(recipe_id, variant),
+			FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+		);
+		INSERT INTO cookbooks (id, name) VALUES (1, 'Legacy');
+		INSERT INTO recipes (id, cookbook_id, title) VALUES (1, 1, 'Legacy Variant Photo');
+		INSERT INTO recipe_photo_variants (recipe_id, variant, data_url)
+		VALUES (1, 'full', 'data:image/png;base64,QUJD');
+	`);
+	legacyDb.close();
+
+	const module = await withEnv(
+		{
+			SERVE_STATIC: 'false',
+			COOKBOOK_DB_PATH: legacyDbPath,
+			AUTH_ENABLED: 'false',
+			AUTH_USERNAME: undefined,
+			AUTH_PASSWORD: undefined
+		},
+		() => import(`../../server/index?legacy-photo-variant=${Date.now()}-${Math.random()}`)
+	);
+	const legacyApp = module.app as AppLike;
+	const legacyDatabase = module.database as Database;
+	try {
+		const columns = legacyDatabase.query<{ name: string }, []>('PRAGMA table_info(recipe_photo_variants)').all().map((row) => row.name);
+		expect(columns).toContain('content_type');
+		expect(columns).toContain('data');
+		expect(columns).not.toContain('data_url');
+
+		const detail = await callAppApi(legacyApp, '/api/recipes/1');
+		expect(detail.status).toBe(200);
+		const payload = (await detail.json()) as { photoFull: string | null };
+		const photoUrl = expectPhotoUrl(payload.photoFull, 1, 'full');
+
+		const photo = await callAppApi(legacyApp, photoUrl);
+		expect(photo.status).toBe(200);
+		expect(photo.headers.get('Content-Type')).toBe('image/png');
+		expect(Buffer.from(await photo.arrayBuffer()).toString('utf8')).toBe('ABC');
+	} finally {
+		legacyDatabase.close();
+		if (fs.existsSync(legacyDbPath)) fs.rmSync(legacyDbPath, { force: true });
+	}
+});
+
 test('recipe mutations handle image clears and invalid ids', async () => {
 	const createRes = await callApi('/api/recipes', {
 		method: 'POST',
@@ -358,6 +428,28 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	expect(searchWithBackfilledThumbnail.status).toBe(200);
 	const searchBackfillPayload = (await searchWithBackfilledThumbnail.json()) as Array<{ id: number; photo: string | null }>;
 	expectPhotoUrl(searchBackfillPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo, legacyPhoto.id, 'thumbnail_card');
+
+	const patchLegacyThumbnailFromFull = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: null })
+	});
+	expect(patchLegacyThumbnailFromFull.status).toBe(200);
+
+	const listWithFullCopiedThumbnail = await callApi('/api/recipes?cookbookId=1');
+	expect(listWithFullCopiedThumbnail.status).toBe(200);
+	const listFullCopiedPayload = (await listWithFullCopiedThumbnail.json()) as Array<{ id: number; photo: string | null }>;
+	const fullCopiedCardUrl = expectPhotoUrl(
+		listFullCopiedPayload.find((recipe) => recipe.id === legacyPhoto.id)?.photo,
+		legacyPhoto.id,
+		'thumbnail_card'
+	);
+	await expectPhotoResponse(fullCopiedCardUrl, 'image/png');
+
+	const restoreLegacyThumbnail = await callApi(`/api/recipes/${legacyPhoto.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoThumbnailDataUrl: 'data:image/jpeg;base64,LEGACY-THUMB' })
+	});
+	expect(restoreLegacyThumbnail.status).toBe(200);
 
 	const patchLegacyTitleOnly = await callApi(`/api/recipes/${legacyPhoto.id}`, {
 		method: 'PATCH',

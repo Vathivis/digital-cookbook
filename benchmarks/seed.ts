@@ -46,6 +46,23 @@ type SeedCache = {
 	summary: Omit<SeedSummary, 'durationMs' | 'cached'>;
 };
 
+function parseDataUrl(dataUrl: string) {
+	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+	if (!match) {
+		return {
+			contentType: 'application/octet-stream',
+			data: Buffer.from(dataUrl)
+		};
+	}
+	const contentType = match[1] || 'application/octet-stream';
+	const isBase64 = Boolean(match[2]);
+	const payload = match[3] ?? '';
+	return {
+		contentType,
+		data: isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload))
+	};
+}
+
 class Rng {
 	private state: number;
 
@@ -130,7 +147,7 @@ const units = ['g', 'ml', 'tbsp', 'tsp', 'cup', 'pcs', 'pinch'];
 const tags = ['quick', 'dinner', 'lunch', 'pasta', 'vegetarian', 'family', 'weekend', 'dessert', 'spicy', 'comfort'];
 const likes = ['Alex', 'Jamie', 'Mira', 'Vojta', 'Tereza', 'Klara', 'Matej', 'Nina'];
 const verbs = ['Chop', 'Warm', 'Mix', 'Fold', 'Simmer', 'Bake', 'Season', 'Rest', 'Serve', 'Whisk'];
-const seedCacheVersion = 1;
+const seedCacheVersion = 2;
 
 function lastInsertId(info: { lastInsertRowid?: number | bigint }) {
 	return Number(info.lastInsertRowid ?? 0);
@@ -269,8 +286,8 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 		'INSERT INTO recipes (cookbook_id, title, description, author, uses, servings) VALUES (?,?,?,?,?,?)'
 	);
 	const insertPhotoVariant = database.prepare(
-		`INSERT INTO recipe_photo_variants (recipe_id, variant, data_url, created_at, updated_at)
-		 VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 	);
 	const insertIngredientName = database.prepare('INSERT OR IGNORE INTO ingredient_names (name) VALUES (?)');
 	const getIngredientName = database.prepare('SELECT id FROM ingredient_names WHERE name = ?');
@@ -310,8 +327,10 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 				)
 			);
 			if (photo) {
-				insertPhotoVariant.run(recipeId, 'full', photo);
-				insertPhotoVariant.run(recipeId, 'thumbnail_card', thumbnail ?? photo);
+				const fullPhoto = parseDataUrl(photo);
+				const cardPhoto = parseDataUrl(thumbnail ?? photo);
+				insertPhotoVariant.run(recipeId, 'full', fullPhoto.contentType, fullPhoto.data);
+				insertPhotoVariant.run(recipeId, 'thumbnail_card', cardPhoto.contentType, cardPhoto.data);
 			}
 
 			const ingredientCount = rng.int(options.minIngredients, options.maxIngredients);
@@ -397,6 +416,12 @@ if (import.meta.main) {
 	const options = getBenchmarkOptions();
 	const args = readCliArgs();
 	applyBenchmarkEnv(options);
+	const cacheKey = seedCacheKey(options);
+	const cache = readSeedCache(options);
+	const cached = !args.has('force') && fs.existsSync(options.dbPath) && cache?.version === seedCacheVersion && cache.cacheKey === cacheKey;
+	if (!cached) {
+		process.env.BENCHMARK_RESET_PHOTO_VARIANTS = 'true';
+	}
 	const { database } = await import(`../server/index.ts?benchmark-seed=${Date.now()}`);
 	const summary = await ensureBenchmarkDatabase(database as BenchmarkDatabase, options, args.has('force'));
 	const prefix = summary.cached ? 'Using cached seed' : 'Seeded';
