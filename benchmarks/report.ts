@@ -21,6 +21,12 @@ export type InteractionMetric = {
 	apiCallsAfter: number;
 };
 
+export type IterationMetric = {
+	label: string;
+	iteration: number;
+	durationMs: number;
+};
+
 export type QueryPlanMetric = {
 	label: string;
 	durationMs: number;
@@ -33,8 +39,10 @@ export type BenchmarkReport = {
 	startedAt: string;
 	finishedAt: string;
 	options: Partial<BenchmarkOptions>;
+	totalDurationMs?: number;
 	apiCalls?: ApiCallMetric[];
 	interactions?: InteractionMetric[];
+	iterationTimings?: IterationMetric[];
 	queryPlans?: QueryPlanMetric[];
 	notes?: string[];
 };
@@ -74,6 +82,20 @@ export function summarizeApiCalls(calls: ApiCallMetric[]) {
 	}));
 }
 
+export function summarizeIterationTimings(iterations: IterationMetric[]) {
+	const byLabel = new Map<string, IterationMetric[]>();
+	for (const iteration of iterations) {
+		const bucket = byLabel.get(iteration.label) ?? [];
+		bucket.push(iteration);
+		byLabel.set(iteration.label, bucket);
+	}
+	return [...byLabel.entries()].map(([label, bucket]) => ({
+		label,
+		...summarizeDurations(bucket.map((iteration) => iteration.durationMs)),
+		totalMs: round(bucket.reduce((sum, iteration) => sum + iteration.durationMs, 0)),
+	}));
+}
+
 const markdownTable = (headers: string[], rows: (string | number)[][]) => {
 	const line = `| ${headers.join(' | ')} |`;
 	const sep = `| ${headers.map(() => '---').join(' | ')} |`;
@@ -100,6 +122,33 @@ export function formatReportMarkdown(report: BenchmarkReport) {
 	lines.push('```json');
 	lines.push(JSON.stringify(report.options, null, 2));
 	lines.push('```');
+
+	if (report.totalDurationMs != null || report.iterationTimings?.length) {
+		lines.push('');
+		lines.push('## Run Timing');
+		lines.push('');
+		if (report.totalDurationMs != null) {
+			lines.push(`Total measured time: ${round(report.totalDurationMs)} ms`);
+		}
+		if (report.iterationTimings?.length) {
+			lines.push('');
+			lines.push(
+				markdownTable(
+					['Label', 'Count', 'Total ms', 'p50 ms', 'p75 ms', 'p95 ms', 'p99 ms', 'Max ms'],
+					summarizeIterationTimings(report.iterationTimings).map((row) => [
+						row.label,
+						row.count,
+						row.totalMs,
+						row.p50,
+						row.p75,
+						row.p95,
+						row.p99,
+						row.max,
+					])
+				)
+			);
+		}
+	}
 
 	if (report.apiCalls?.length) {
 		lines.push('');

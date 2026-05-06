@@ -303,6 +303,12 @@ ensureColumn('ingredients', 'name');
 
 runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_recipe_id ON ingredients(recipe_id)');
 runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_ingredient_id ON ingredients(ingredient_id)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_ingredients_recipe_position ON ingredients(recipe_id, position)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_steps_recipe_position ON steps(recipe_id, position)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_notes_recipe_id ON notes(recipe_id)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_tags_name_nocase ON tags(name COLLATE NOCASE)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_ingredient_names_name_nocase ON ingredient_names(name COLLATE NOCASE)');
+runStatement('CREATE INDEX IF NOT EXISTS idx_recipes_cookbook_title ON recipes(cookbook_id, title COLLATE NOCASE, id)');
 runStatement(
 	'CREATE INDEX IF NOT EXISTS idx_recipe_photo_variants_list ON recipe_photo_variants(recipe_id, variant, updated_at)'
 );
@@ -650,7 +656,7 @@ const fetchIngredientNames = (ids: number[]) => {
 		 FROM ingredients i
 		 LEFT JOIN ingredient_names n ON n.id = i.ingredient_id
 		 WHERE i.recipe_id IN (${placeholders})
-		 ORDER BY i.position ASC`,
+		 ORDER BY i.recipe_id ASC, i.position ASC`,
 		...ids
 	);
 	const grouped: Record<number, string[]> = {};
@@ -825,7 +831,7 @@ export const app = new Elysia({
 		const recipes = allStatement<RecipeRecord>(
 			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
-			 ORDER BY LOWER(title) ASC, id ASC`,
+			 ORDER BY title COLLATE NOCASE ASC, id ASC`,
 			cookbookId
 		);
 		return withRecipeMetadata(recipes);
@@ -868,7 +874,7 @@ export const app = new Elysia({
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 ${whereClause}
-			 ORDER BY LOWER(r.title) ASC, r.id ASC
+			 ORDER BY r.title COLLATE NOCASE ASC, r.id ASC
 			 ${limitClause}`,
 			...params
 		);
@@ -1126,7 +1132,7 @@ export const app = new Elysia({
 	})
 	.get('/api/tags', ({ set }) => {
 		try {
-			const rows = allStatement<{ name: string }>('SELECT name FROM tags ORDER BY LOWER(name) ASC');
+			const rows = allStatement<{ name: string }>('SELECT name FROM tags ORDER BY name COLLATE NOCASE ASC');
 			return rows.map((r) => r.name);
 		} catch {
 			set.status = 500;
@@ -1175,9 +1181,9 @@ export const app = new Elysia({
 							ELSE 2
 						END,
 						LENGTH(n.name) ASC,
-						LOWER(n.name) ASC
+						n.name COLLATE NOCASE ASC
 				`
-				: 'ORDER BY LOWER(n.name) ASC';
+				: 'ORDER BY n.name COLLATE NOCASE ASC';
 
 			if (hasTerm) {
 				params.push(rawTerm, prefixTerm);

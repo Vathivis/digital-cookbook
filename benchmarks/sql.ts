@@ -48,7 +48,7 @@ if (import.meta.main) {
 			'recipes:list',
 			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
 			 FROM recipes WHERE cookbook_id = ?
-			 ORDER BY LOWER(title) ASC, id ASC`,
+			 ORDER BY title COLLATE NOCASE ASC, id ASC`,
 			[1]
 		)
 	);
@@ -60,7 +60,7 @@ if (import.meta.main) {
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 AND (LOWER(r.title) LIKE ? ESCAPE '\\' OR LOWER(r.description) LIKE ? ESCAPE '\\')
-			 ORDER BY LOWER(r.title) ASC, r.id ASC
+			 ORDER BY r.title COLLATE NOCASE ASC, r.id ASC
 			 LIMIT 200`,
 			[1, '%pomodoro%', '%pomodoro%']
 		)
@@ -77,7 +77,7 @@ if (import.meta.main) {
 				LEFT JOIN ingredient_names n ON n.id = i.ingredient_id
 				WHERE i.recipe_id = r.id AND LOWER(COALESCE(n.name, i.name, i.line)) LIKE ? ESCAPE '\\'
 			 )
-			 ORDER BY LOWER(r.title) ASC, r.id ASC
+			 ORDER BY r.title COLLATE NOCASE ASC, r.id ASC
 			 LIMIT 200`,
 			[1, '%tomato%']
 		)
@@ -101,7 +101,7 @@ if (import.meta.main) {
 				 FROM ingredients i
 				 LEFT JOIN ingredient_names n ON n.id = i.ingredient_id
 				 WHERE i.recipe_id IN (${placeholders})
-				 ORDER BY i.position ASC`,
+				 ORDER BY i.recipe_id ASC, i.position ASC`,
 				ids
 			)
 		);
@@ -131,7 +131,35 @@ if (import.meta.main) {
 				[ids[0]]
 			)
 		);
+		plans.push(
+			runQueryPlan(
+				db,
+				'recipe:detail:steps',
+				'SELECT instruction, position FROM steps WHERE recipe_id=? ORDER BY position ASC',
+				[ids[0]]
+			)
+		);
+		plans.push(
+			runQueryPlan(
+				db,
+				'recipe:detail:notes',
+				'SELECT content FROM notes WHERE recipe_id=?',
+				[ids[0]]
+			)
+		);
 	}
+	plans.push(runQueryPlan(db, 'tags:list', 'SELECT name FROM tags ORDER BY name COLLATE NOCASE ASC'));
+	plans.push(
+		runQueryPlan(
+			db,
+			'ingredients:list-global',
+			`SELECT DISTINCT n.name as name
+			 FROM ingredient_names n
+			 ORDER BY n.name COLLATE NOCASE ASC
+			 LIMIT ?`,
+			[50]
+		)
+	);
 	plans.push(
 		runQueryPlan(
 			db,
@@ -148,7 +176,7 @@ if (import.meta.main) {
 					ELSE 2
 				END,
 				LENGTH(n.name) ASC,
-				LOWER(n.name) ASC
+				n.name COLLATE NOCASE ASC
 			 LIMIT ?`,
 			[1, '%tom%', 'tom', 'tom%', 20]
 		)
