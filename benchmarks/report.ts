@@ -34,6 +34,20 @@ export type QueryPlanMetric = {
 	plan: string[];
 };
 
+export type MemorySampleMetric = {
+	label: string;
+	role: string;
+	timestampMs: number;
+	rssBytes: number;
+	privateBytes?: number;
+	processCount: number;
+};
+
+export type MemoryPhaseMetric = {
+	label: string;
+	durationMs: number;
+};
+
 export type BenchmarkReport = {
 	name: string;
 	startedAt: string;
@@ -44,10 +58,13 @@ export type BenchmarkReport = {
 	interactions?: InteractionMetric[];
 	iterationTimings?: IterationMetric[];
 	queryPlans?: QueryPlanMetric[];
+	memorySamples?: MemorySampleMetric[];
+	memoryPhases?: MemoryPhaseMetric[];
 	notes?: string[];
 };
 
 const round = (value: number) => Math.round(value * 100) / 100;
+const bytesToMiB = (value: number) => round(value / 1024 / 1024);
 
 export function percentile(values: number[], pct: number) {
 	if (!values.length) return 0;
@@ -94,6 +111,55 @@ export function summarizeIterationTimings(iterations: IterationMetric[]) {
 		...summarizeDurations(bucket.map((iteration) => iteration.durationMs)),
 		totalMs: round(bucket.reduce((sum, iteration) => sum + iteration.durationMs, 0)),
 	}));
+}
+
+export function summarizeMemoryPhases(samples: MemorySampleMetric[], phases: MemoryPhaseMetric[]) {
+	const rows: Array<{
+		label: string;
+		role: string;
+		durationMs: number;
+		samples: number;
+		startRssMiB: number;
+		endRssMiB: number;
+		peakRssMiB: number;
+		deltaRssMiB: number;
+		startPrivateMiB: number | '';
+		endPrivateMiB: number | '';
+		peakPrivateMiB: number | '';
+		deltaPrivateMiB: number | '';
+		processCountMax: number;
+	}> = [];
+	for (const phase of phases) {
+		const phaseSamples = samples.filter((sample) => sample.label === phase.label);
+		const roles = [...new Set(phaseSamples.map((sample) => sample.role))].sort();
+		for (const role of roles) {
+			const bucket = phaseSamples.filter((sample) => sample.role === role).sort((a, b) => a.timestampMs - b.timestampMs);
+			if (!bucket.length) continue;
+			const first = bucket[0];
+			const last = bucket[bucket.length - 1];
+			const peakRssBytes = Math.max(...bucket.map((sample) => sample.rssBytes));
+			const privateValues = bucket.map((sample) => sample.privateBytes).filter((value): value is number => typeof value === 'number');
+			const firstPrivate = first.privateBytes;
+			const lastPrivate = last.privateBytes;
+			const peakPrivate = privateValues.length ? Math.max(...privateValues) : undefined;
+			rows.push({
+				label: phase.label,
+				role,
+				durationMs: round(phase.durationMs),
+				samples: bucket.length,
+				startRssMiB: bytesToMiB(first.rssBytes),
+				endRssMiB: bytesToMiB(last.rssBytes),
+				peakRssMiB: bytesToMiB(peakRssBytes),
+				deltaRssMiB: bytesToMiB(last.rssBytes - first.rssBytes),
+				startPrivateMiB: firstPrivate == null ? '' : bytesToMiB(firstPrivate),
+				endPrivateMiB: lastPrivate == null ? '' : bytesToMiB(lastPrivate),
+				peakPrivateMiB: peakPrivate == null ? '' : bytesToMiB(peakPrivate),
+				deltaPrivateMiB: firstPrivate == null || lastPrivate == null ? '' : bytesToMiB(lastPrivate - firstPrivate),
+				processCountMax: Math.max(...bucket.map((sample) => sample.processCount)),
+			});
+		}
+	}
+	return rows;
 }
 
 const markdownTable = (headers: string[], rows: (string | number)[][]) => {
@@ -203,6 +269,46 @@ export function formatReportMarkdown(report: BenchmarkReport) {
 			lines.push('```');
 			lines.push('');
 		}
+	}
+
+	if (report.memorySamples?.length && report.memoryPhases?.length) {
+		lines.push('');
+		lines.push('## Memory Phases');
+		lines.push('');
+		lines.push(
+			markdownTable(
+				[
+					'Label',
+					'Role',
+					'Duration ms',
+					'Samples',
+					'Start RSS MiB',
+					'End RSS MiB',
+					'Peak RSS MiB',
+					'Delta RSS MiB',
+					'Start Private MiB',
+					'End Private MiB',
+					'Peak Private MiB',
+					'Delta Private MiB',
+					'Max processes',
+				],
+				summarizeMemoryPhases(report.memorySamples, report.memoryPhases).map((row) => [
+					row.label,
+					row.role,
+					row.durationMs,
+					row.samples,
+					row.startRssMiB,
+					row.endRssMiB,
+					row.peakRssMiB,
+					row.deltaRssMiB,
+					row.startPrivateMiB,
+					row.endPrivateMiB,
+					row.peakPrivateMiB,
+					row.deltaPrivateMiB,
+					row.processCountMax,
+				])
+			)
+		);
 	}
 
 	if (report.notes?.length) {

@@ -18,6 +18,7 @@
     "benchmark:backend": "bun benchmarks/backend.ts",
     "benchmark:frontend": "bun benchmarks/frontend.ts",
     "benchmark:full": "bun benchmarks/full.ts",
+    "benchmark:ram": "bun benchmarks/ram.ts",
     "benchmark": "bun run benchmark:full",
     "server:benchmark": "bun benchmarks/server.ts"
   },
