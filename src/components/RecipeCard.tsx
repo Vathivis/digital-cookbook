@@ -248,7 +248,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		setActiveIngredientIndex(null);
 		setIngredientAnchor(null);
 		setIngredientHighlight(-1);
-	}, []);
+	}, [setActiveIngredientIndex, setIngredientAnchor, setIngredientHighlight]);
 	useEffect(() => {
 		if (!open) closeIngredientAutocomplete();
 	}, [open, closeIngredientAutocomplete]);
@@ -498,7 +498,7 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 				}
 			})
 			.catch((error) => console.error('Failed to process image', error));
-	}, []);
+	}, [setPhoto, setPhotoThumbnail]);
 
 	useEffect(() => {
 		if (!open || !editing) return;

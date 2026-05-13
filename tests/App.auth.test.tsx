@@ -6,6 +6,9 @@ import { AUTH_EXPIRED_EVENT } from '@/lib/api';
 
 const happyWindow = new HappyWindow();
 const globalWindow = happyWindow as unknown as Window & typeof globalThis;
+globalWindow.Error = Error;
+globalWindow.SyntaxError = SyntaxError;
+globalWindow.TypeError = TypeError;
 Object.assign(globalThis, {
 	window: globalWindow,
 	document: globalWindow.document,
@@ -201,7 +204,7 @@ describe('App auth gating', () => {
 		});
 
 		act(() => {
-			window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+			window.dispatchEvent(new globalWindow.CustomEvent(AUTH_EXPIRED_EVENT));
 		});
 
 		await waitFor(() => {
