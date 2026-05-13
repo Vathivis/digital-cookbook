@@ -385,10 +385,18 @@ const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/
 const isProtectedApiPath = (pathname: string) =>
 	protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
+const isAuthApiPath = (pathname: string) => pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+
 const isCorsPreflightRequest = (request: Request) =>
 	request.method === 'OPTIONS' &&
 	Boolean(request.headers.get('origin')) &&
 	Boolean(request.headers.get('access-control-request-method'));
+
+const isSameOriginRequest = (request: Request) => {
+	const origin = request.headers.get('origin');
+	if (!origin) return true;
+	return origin === new URL(request.url).origin;
+};
 
 const parseCookies = (value: string | null) => {
 	const cookies: Record<string, string> = {};
@@ -612,8 +620,11 @@ export const app = new Elysia({
 	.onBeforeHandle(({ request, set }) => {
 		if (!authEnabled) return;
 		const pathname = new URL(request.url).pathname;
-		if (!isProtectedApiPath(pathname)) return;
+		const isProtectedPath = isProtectedApiPath(pathname);
+		if (!isProtectedPath && !isAuthApiPath(pathname)) return;
 		if (isCorsPreflightRequest(request)) return;
+		if (!isSameOriginRequest(request)) return badRequest(set, 'cross-origin API request denied');
+		if (!isProtectedPath) return;
 		const session = getAuthSession(request);
 		if (!session.authenticated) return unauthorized(set);
 	})

@@ -176,6 +176,92 @@ describe('auth', () => {
 		}
 	});
 
+	test('denies cross-origin protected API requests even with a valid auth cookie', async () => {
+		const server = await loadServer();
+		try {
+			const login = await callApi(server.app, '/api/auth/login', {
+				method: 'POST',
+				body: JSON.stringify({ username: 'chef', password: 'secret' })
+			});
+			expect(login.status).toBe(200);
+			const session = cookiePair(login.headers.get('set-cookie'));
+
+			const crossOriginRead = await callApi(server.app, '/api/cookbooks', {
+				headers: {
+					Cookie: session,
+					Origin: 'http://evil.example.test'
+				}
+			});
+			expect(crossOriginRead.status).toBe(400);
+			await expect(crossOriginRead.json()).resolves.toEqual({ error: 'cross-origin API request denied' });
+
+			const crossOriginCreate = await callApi(server.app, '/api/cookbooks', {
+				method: 'POST',
+				headers: {
+					Cookie: session,
+					Origin: 'http://evil.example.test'
+				},
+				body: JSON.stringify({ name: 'Injected' })
+			});
+			expect(crossOriginCreate.status).toBe(400);
+			await expect(crossOriginCreate.json()).resolves.toEqual({ error: 'cross-origin API request denied' });
+
+			const sameOriginCreate = await callApi(server.app, '/api/cookbooks', {
+				method: 'POST',
+				headers: {
+					Cookie: session,
+					Origin: 'http://localhost'
+				},
+				body: JSON.stringify({ name: 'Allowed' })
+			});
+			expect(sameOriginCreate.status).toBe(200);
+		} finally {
+			closeServer(server);
+		}
+	});
+
+	test('denies cross-origin auth status and logout requests with a valid auth cookie', async () => {
+		const server = await loadServer();
+		try {
+			const login = await callApi(server.app, '/api/auth/login', {
+				method: 'POST',
+				body: JSON.stringify({ username: 'chef', password: 'secret' })
+			});
+			expect(login.status).toBe(200);
+			const session = cookiePair(login.headers.get('set-cookie'));
+
+			const crossOriginStatus = await callApi(server.app, '/api/auth/status', {
+				headers: {
+					Cookie: session,
+					Origin: 'http://evil.example.test'
+				}
+			});
+			expect(crossOriginStatus.status).toBe(400);
+			await expect(crossOriginStatus.json()).resolves.toEqual({ error: 'cross-origin API request denied' });
+
+			const crossOriginLogout = await callApi(server.app, '/api/auth/logout', {
+				method: 'POST',
+				headers: {
+					Cookie: session,
+					Origin: 'http://evil.example.test'
+				}
+			});
+			expect(crossOriginLogout.status).toBe(400);
+			await expect(crossOriginLogout.json()).resolves.toEqual({ error: 'cross-origin API request denied' });
+
+			const sameOriginStatus = await callApi(server.app, '/api/auth/status', {
+				headers: {
+					Cookie: session,
+					Origin: 'http://localhost'
+				}
+			});
+			expect(sameOriginStatus.status).toBe(200);
+			await expect(sameOriginStatus.json()).resolves.toEqual({ enabled: true, authenticated: true, username: 'chef' });
+		} finally {
+			closeServer(server);
+		}
+	});
+
 	test('keeps health endpoints publicly accessible when auth is enabled', async () => {
 		const server = await loadServer();
 		try {
