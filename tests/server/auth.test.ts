@@ -182,9 +182,8 @@ describe('auth', () => {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
 				headers: {
-					Host: 'upstream.internal:4000',
+					Host: 'cookbook.example.test:443',
 					Origin: 'https://cookbook.example.test',
-					'X-Forwarded-Host': 'cookbook.example.test',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ username: 'chef', password: 'secret' })
@@ -197,9 +196,8 @@ describe('auth', () => {
 				method: 'POST',
 				headers: {
 					Cookie: session,
-					Host: 'upstream.internal:4000',
+					Host: 'cookbook.example.test:443',
 					Origin: 'https://cookbook.example.test',
-					'X-Forwarded-Host': 'cookbook.example.test:443',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ name: 'Proxy Allowed' })
@@ -209,9 +207,9 @@ describe('auth', () => {
 			const sameOriginStatus = await callApi(server.app, '/api/auth/status', {
 				headers: {
 					Cookie: session,
-					Host: 'upstream.internal:4000',
+					Host: 'cookbook.example.test:443',
 					Origin: 'https://cookbook.example.test',
-					Forwarded: 'proto=https;host=cookbook.example.test:443'
+					Forwarded: 'proto=https'
 				}
 			});
 			expect(sameOriginStatus.status).toBe(200);
@@ -220,8 +218,8 @@ describe('auth', () => {
 		}
 	});
 
-	test('ignores spoofed forwarded origin headers unless proxy trust is enabled', async () => {
-		const server = await loadServer();
+	test('does not use forwarded host as same-origin evidence', async () => {
+		const server = await loadServer({ TRUST_PROXY_HEADERS: 'true' });
 		try {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',

@@ -439,19 +439,11 @@ const normalizeHost = (value: string | null, protocol = 'http:') => {
 	}
 };
 
-const getForwardedHost = (request: Request, protocol: string) => {
-	if (!trustProxyHeaders) return null;
-	return normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host')), protocol) ?? normalizeHost(forwardedParameter(request, 'host'), protocol);
-};
-
 const getRequestOrigins = (request: Request) => {
 	const url = new URL(request.url);
 	const protocol = getForwardedProtocol(request, { requireTrustedProxy: true }) ?? url.protocol;
 	const directHost = normalizeHost(request.headers.get('host'), protocol) ?? url.host;
-	const origins = new Set([`${protocol}//${directHost}`]);
-	const forwardedHost = getForwardedHost(request, protocol);
-	if (forwardedHost) origins.add(`${protocol}//${forwardedHost}`);
-	return origins;
+	return new Set([`${protocol}//${directHost}`]);
 };
 
 const isSameOriginRequest = (request: Request) => {
