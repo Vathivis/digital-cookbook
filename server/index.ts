@@ -392,10 +392,29 @@ const isCorsPreflightRequest = (request: Request) =>
 	Boolean(request.headers.get('origin')) &&
 	Boolean(request.headers.get('access-control-request-method'));
 
+const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() || null;
+
+const getForwardedProtocol = (request: Request) => {
+	const proto = firstHeaderValue(request.headers.get('x-forwarded-proto'))?.toLowerCase();
+	if (proto === 'http' || proto === 'https') return `${proto}:`;
+	return null;
+};
+
+const getRequestOrigin = (request: Request) => {
+	const url = new URL(request.url);
+	const protocol = getForwardedProtocol(request) ?? url.protocol;
+	const host = request.headers.get('host')?.trim() || url.host;
+	return `${protocol}//${host}`;
+};
+
 const isSameOriginRequest = (request: Request) => {
 	const origin = request.headers.get('origin');
 	if (!origin) return true;
-	return origin === new URL(request.url).origin;
+	try {
+		return new URL(origin).origin === getRequestOrigin(request);
+	} catch {
+		return false;
+	}
 };
 
 const parseCookies = (value: string | null) => {
@@ -470,10 +489,7 @@ const getAuthSession = (request: Request): AuthSession => {
 const isSecureRequest = (request: Request) => {
 	const url = new URL(request.url);
 	if (url.protocol === 'https:') return true;
-	const forwardedProto = request.headers.get('x-forwarded-proto');
-	if (!forwardedProto) return false;
-	const proto = forwardedProto.split(',')[0]?.trim().toLowerCase();
-	return proto === 'https';
+	return getForwardedProtocol(request) === 'https:';
 };
 
 const buildSessionCookie = (value: string, maxAgeSeconds: number, request: Request) => {

@@ -176,6 +176,36 @@ describe('auth', () => {
 		}
 	});
 
+	test('allows same-origin API requests when TLS is terminated by a proxy', async () => {
+		const server = await loadServer();
+		try {
+			const login = await callApi(server.app, '/api/auth/login', {
+				method: 'POST',
+				headers: {
+					Origin: 'https://localhost',
+					'X-Forwarded-Proto': 'https'
+				},
+				body: JSON.stringify({ username: 'chef', password: 'secret' })
+			});
+			expect(login.status).toBe(200);
+			expect(login.headers.get('set-cookie')).toContain('Secure');
+			const session = cookiePair(login.headers.get('set-cookie'));
+
+			const sameOriginCreate = await callApi(server.app, '/api/cookbooks', {
+				method: 'POST',
+				headers: {
+					Cookie: session,
+					Origin: 'https://localhost',
+					'X-Forwarded-Proto': 'https'
+				},
+				body: JSON.stringify({ name: 'Proxy Allowed' })
+			});
+			expect(sameOriginCreate.status).toBe(200);
+		} finally {
+			closeServer(server);
+		}
+	});
+
 	test('denies cross-origin protected API requests even with a valid auth cookie', async () => {
 		const server = await loadServer();
 		try {
