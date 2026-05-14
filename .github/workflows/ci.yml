@@ -168,6 +168,11 @@ jobs:
           existing_event_release_tag="$(git tag --points-at "$event_sha" --list 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)"
           if [[ -n "$existing_event_release_tag" ]]; then
             release_version="${existing_event_release_tag#v}"
+            if [[ ! "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Existing release tag version must be strict semver X.Y.Z, got: $release_version"
+              exit 1
+            fi
+
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "current_version=$release_version" >> "$GITHUB_OUTPUT"
             echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
