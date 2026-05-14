@@ -199,7 +199,7 @@ describe('auth', () => {
 					Cookie: session,
 					Host: 'upstream.internal:4000',
 					Origin: 'https://cookbook.example.test',
-					'X-Forwarded-Host': 'cookbook.example.test',
+					'X-Forwarded-Host': 'cookbook.example.test:443',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ name: 'Proxy Allowed' })
@@ -211,7 +211,7 @@ describe('auth', () => {
 					Cookie: session,
 					Host: 'upstream.internal:4000',
 					Origin: 'https://cookbook.example.test',
-					Forwarded: 'proto=https;host=cookbook.example.test'
+					Forwarded: 'proto=https;host=cookbook.example.test:443'
 				}
 			});
 			expect(sameOriginStatus.status).toBe(200);

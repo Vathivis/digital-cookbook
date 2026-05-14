@@ -428,28 +428,28 @@ const getForwardedProtocol = (request: Request) => {
 	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
 };
 
-const normalizeHost = (value: string | null) => {
+const normalizeHost = (value: string | null, protocol = 'http:') => {
 	if (!value) return null;
 	const host = unquoteHeaderValue(value);
 	if (!host || /[\s/\\]/.test(host)) return null;
 	try {
-		return new URL(`http://${host}`).host;
+		return new URL(`${protocol}//${host}`).host;
 	} catch {
 		return null;
 	}
 };
 
-const getForwardedHost = (request: Request) => {
+const getForwardedHost = (request: Request, protocol: string) => {
 	if (!trustProxyHeaders) return null;
-	return normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))) ?? normalizeHost(forwardedParameter(request, 'host'));
+	return normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host')), protocol) ?? normalizeHost(forwardedParameter(request, 'host'), protocol);
 };
 
 const getRequestOrigins = (request: Request) => {
 	const url = new URL(request.url);
 	const protocol = getForwardedProtocol(request) ?? url.protocol;
-	const directHost = normalizeHost(request.headers.get('host')) ?? url.host;
+	const directHost = normalizeHost(request.headers.get('host'), protocol) ?? url.host;
 	const origins = new Set([`${protocol}//${directHost}`]);
-	const forwardedHost = getForwardedHost(request);
+	const forwardedHost = getForwardedHost(request, protocol);
 	if (forwardedHost) origins.add(`${protocol}//${forwardedHost}`);
 	return origins;
 };
