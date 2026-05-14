@@ -182,7 +182,9 @@ describe('auth', () => {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
 				headers: {
-					Origin: 'https://localhost',
+					Host: 'upstream.internal:4000',
+					Origin: 'https://cookbook.example.test',
+					'X-Forwarded-Host': 'cookbook.example.test',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ username: 'chef', password: 'secret' })
@@ -195,12 +197,24 @@ describe('auth', () => {
 				method: 'POST',
 				headers: {
 					Cookie: session,
-					Origin: 'https://localhost',
+					Host: 'upstream.internal:4000',
+					Origin: 'https://cookbook.example.test',
+					'X-Forwarded-Host': 'cookbook.example.test',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ name: 'Proxy Allowed' })
 			});
 			expect(sameOriginCreate.status).toBe(200);
+
+			const sameOriginStatus = await callApi(server.app, '/api/auth/status', {
+				headers: {
+					Cookie: session,
+					Host: 'upstream.internal:4000',
+					Origin: 'https://cookbook.example.test',
+					Forwarded: 'proto=https;host=cookbook.example.test'
+				}
+			});
+			expect(sameOriginStatus.status).toBe(200);
 		} finally {
 			closeServer(server);
 		}

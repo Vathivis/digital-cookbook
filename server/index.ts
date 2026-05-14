@@ -394,24 +394,68 @@ const isCorsPreflightRequest = (request: Request) =>
 
 const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() || null;
 
-const getForwardedProtocol = (request: Request) => {
-	const proto = firstHeaderValue(request.headers.get('x-forwarded-proto'))?.toLowerCase();
+const unquoteHeaderValue = (value: string) => {
+	const trimmed = value.trim();
+	if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+		return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+	}
+	return trimmed;
+};
+
+const forwardedParameter = (request: Request, name: string) => {
+	const forwarded = firstHeaderValue(request.headers.get('forwarded'));
+	if (!forwarded) return null;
+	for (const part of forwarded.split(';')) {
+		const separator = part.indexOf('=');
+		if (separator <= 0) continue;
+		const key = part.slice(0, separator).trim().toLowerCase();
+		if (key !== name) continue;
+		const value = unquoteHeaderValue(part.slice(separator + 1));
+		return value || null;
+	}
+	return null;
+};
+
+const normalizeProtocol = (value: string | null) => {
+	const proto = value?.trim().toLowerCase();
 	if (proto === 'http' || proto === 'https') return `${proto}:`;
 	return null;
 };
 
-const getRequestOrigin = (request: Request) => {
+const getForwardedProtocol = (request: Request) => {
+	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
+};
+
+const normalizeHost = (value: string | null) => {
+	if (!value) return null;
+	const host = unquoteHeaderValue(value);
+	if (!host || /[\s/\\]/.test(host)) return null;
+	try {
+		return new URL(`http://${host}`).host;
+	} catch {
+		return null;
+	}
+};
+
+const getForwardedHost = (request: Request) => {
+	return normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))) ?? normalizeHost(forwardedParameter(request, 'host'));
+};
+
+const getRequestOrigins = (request: Request) => {
 	const url = new URL(request.url);
 	const protocol = getForwardedProtocol(request) ?? url.protocol;
-	const host = request.headers.get('host')?.trim() || url.host;
-	return `${protocol}//${host}`;
+	const directHost = normalizeHost(request.headers.get('host')) ?? url.host;
+	const origins = new Set([`${protocol}//${directHost}`]);
+	const forwardedHost = getForwardedHost(request);
+	if (forwardedHost) origins.add(`${protocol}//${forwardedHost}`);
+	return origins;
 };
 
 const isSameOriginRequest = (request: Request) => {
 	const origin = request.headers.get('origin');
 	if (!origin) return true;
 	try {
-		return new URL(origin).origin === getRequestOrigin(request);
+		return getRequestOrigins(request).has(new URL(origin).origin);
 	} catch {
 		return false;
 	}
