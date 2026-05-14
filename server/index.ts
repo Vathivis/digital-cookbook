@@ -423,8 +423,8 @@ const normalizeProtocol = (value: string | null) => {
 	return null;
 };
 
-const getForwardedProtocol = (request: Request) => {
-	if (!trustProxyHeaders) return null;
+const getForwardedProtocol = (request: Request, options?: { requireTrustedProxy?: boolean }) => {
+	if (options?.requireTrustedProxy && !trustProxyHeaders) return null;
 	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
 };
 
@@ -446,7 +446,7 @@ const getForwardedHost = (request: Request, protocol: string) => {
 
 const getRequestOrigins = (request: Request) => {
 	const url = new URL(request.url);
-	const protocol = getForwardedProtocol(request) ?? url.protocol;
+	const protocol = getForwardedProtocol(request, { requireTrustedProxy: true }) ?? url.protocol;
 	const directHost = normalizeHost(request.headers.get('host'), protocol) ?? url.host;
 	const origins = new Set([`${protocol}//${directHost}`]);
 	const forwardedHost = getForwardedHost(request, protocol);

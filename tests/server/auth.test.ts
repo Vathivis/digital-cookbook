@@ -246,6 +246,24 @@ describe('auth', () => {
 		}
 	});
 
+	test('sets secure cookies from forwarded proto without trusting forwarded origins', async () => {
+		const server = await loadServer();
+		try {
+			const login = await callApi(server.app, '/api/auth/login', {
+				method: 'POST',
+				headers: {
+					Origin: 'http://localhost',
+					'X-Forwarded-Proto': 'https'
+				},
+				body: JSON.stringify({ username: 'chef', password: 'secret' })
+			});
+			expect(login.status).toBe(200);
+			expect(login.headers.get('set-cookie')).toContain('Secure');
+		} finally {
+			closeServer(server);
+		}
+	});
+
 	test('denies cross-origin protected API requests even with a valid auth cookie', async () => {
 		const server = await loadServer();
 		try {
