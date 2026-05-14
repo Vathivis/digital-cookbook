@@ -177,7 +177,7 @@ describe('auth', () => {
 	});
 
 	test('allows same-origin API requests when TLS is terminated by a proxy', async () => {
-		const server = await loadServer();
+		const server = await loadServer({ TRUST_PROXY_HEADERS: 'true' });
 		try {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
@@ -215,6 +215,32 @@ describe('auth', () => {
 				}
 			});
 			expect(sameOriginStatus.status).toBe(200);
+		} finally {
+			closeServer(server);
+		}
+	});
+
+	test('ignores spoofed forwarded origin headers unless proxy trust is enabled', async () => {
+		const server = await loadServer();
+		try {
+			const login = await callApi(server.app, '/api/auth/login', {
+				method: 'POST',
+				body: JSON.stringify({ username: 'chef', password: 'secret' })
+			});
+			expect(login.status).toBe(200);
+			const session = cookiePair(login.headers.get('set-cookie'));
+
+			const spoofedForwardedHost = await callApi(server.app, '/api/cookbooks', {
+				headers: {
+					Cookie: session,
+					Host: 'localhost',
+					Origin: 'http://evil.example.test',
+					'X-Forwarded-Host': 'evil.example.test',
+					'X-Forwarded-Proto': 'http'
+				}
+			});
+			expect(spoofedForwardedHost.status).toBe(400);
+			await expect(spoofedForwardedHost.json()).resolves.toEqual({ error: 'cross-origin API request denied' });
 		} finally {
 			closeServer(server);
 		}

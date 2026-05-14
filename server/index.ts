@@ -113,6 +113,7 @@ const isTruthyEnv = (value: string | undefined) => {
 	return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 };
 const authEnabled = isTruthyEnv(process.env.AUTH_ENABLED);
+const trustProxyHeaders = isTruthyEnv(process.env.TRUST_PROXY_HEADERS);
 const authUsername = process.env.AUTH_USERNAME?.trim() ?? '';
 const authPassword = process.env.AUTH_PASSWORD ?? '';
 if (authEnabled && (!authUsername || !authPassword)) {
@@ -423,6 +424,7 @@ const normalizeProtocol = (value: string | null) => {
 };
 
 const getForwardedProtocol = (request: Request) => {
+	if (!trustProxyHeaders) return null;
 	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
 };
 
@@ -438,6 +440,7 @@ const normalizeHost = (value: string | null) => {
 };
 
 const getForwardedHost = (request: Request) => {
+	if (!trustProxyHeaders) return null;
 	return normalizeHost(firstHeaderValue(request.headers.get('x-forwarded-host'))) ?? normalizeHost(forwardedParameter(request, 'host'));
 };
 
