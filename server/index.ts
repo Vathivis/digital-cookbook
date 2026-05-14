@@ -385,10 +385,74 @@ const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/
 const isProtectedApiPath = (pathname: string) =>
 	protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
+const isAuthApiPath = (pathname: string) => pathname === '/api/auth' || pathname.startsWith('/api/auth/');
+
 const isCorsPreflightRequest = (request: Request) =>
 	request.method === 'OPTIONS' &&
 	Boolean(request.headers.get('origin')) &&
 	Boolean(request.headers.get('access-control-request-method'));
+
+const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() || null;
+
+const unquoteHeaderValue = (value: string) => {
+	const trimmed = value.trim();
+	if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+		return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+	}
+	return trimmed;
+};
+
+const forwardedParameter = (request: Request, name: string) => {
+	const forwarded = firstHeaderValue(request.headers.get('forwarded'));
+	if (!forwarded) return null;
+	for (const part of forwarded.split(';')) {
+		const separator = part.indexOf('=');
+		if (separator <= 0) continue;
+		const key = part.slice(0, separator).trim().toLowerCase();
+		if (key !== name) continue;
+		const value = unquoteHeaderValue(part.slice(separator + 1));
+		return value || null;
+	}
+	return null;
+};
+
+const normalizeProtocol = (value: string | null) => {
+	const proto = value?.trim().toLowerCase();
+	if (proto === 'http' || proto === 'https') return `${proto}:`;
+	return null;
+};
+
+const getForwardedProtocol = (request: Request) => {
+	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
+};
+
+const normalizeHost = (value: string | null, protocol = 'http:') => {
+	if (!value) return null;
+	const host = unquoteHeaderValue(value);
+	if (!host || /[\s/\\]/.test(host)) return null;
+	try {
+		return new URL(`${protocol}//${host}`).host;
+	} catch {
+		return null;
+	}
+};
+
+const getRequestOrigins = (request: Request) => {
+	const url = new URL(request.url);
+	const protocol = getForwardedProtocol(request) ?? url.protocol;
+	const directHost = normalizeHost(request.headers.get('host'), protocol) ?? url.host;
+	return new Set([`${protocol}//${directHost}`]);
+};
+
+const isSameOriginRequest = (request: Request) => {
+	const origin = request.headers.get('origin');
+	if (!origin) return true;
+	try {
+		return getRequestOrigins(request).has(new URL(origin).origin);
+	} catch {
+		return false;
+	}
+};
 
 const parseCookies = (value: string | null) => {
 	const cookies: Record<string, string> = {};
@@ -462,10 +526,7 @@ const getAuthSession = (request: Request): AuthSession => {
 const isSecureRequest = (request: Request) => {
 	const url = new URL(request.url);
 	if (url.protocol === 'https:') return true;
-	const forwardedProto = request.headers.get('x-forwarded-proto');
-	if (!forwardedProto) return false;
-	const proto = forwardedProto.split(',')[0]?.trim().toLowerCase();
-	return proto === 'https';
+	return getForwardedProtocol(request) === 'https:';
 };
 
 const buildSessionCookie = (value: string, maxAgeSeconds: number, request: Request) => {
@@ -612,8 +673,11 @@ export const app = new Elysia({
 	.onBeforeHandle(({ request, set }) => {
 		if (!authEnabled) return;
 		const pathname = new URL(request.url).pathname;
-		if (!isProtectedApiPath(pathname)) return;
+		const isProtectedPath = isProtectedApiPath(pathname);
+		if (!isProtectedPath && !isAuthApiPath(pathname)) return;
 		if (isCorsPreflightRequest(request)) return;
+		if (!isSameOriginRequest(request)) return badRequest(set, 'cross-origin API request denied');
+		if (!isProtectedPath) return;
 		const session = getAuthSession(request);
 		if (!session.authenticated) return unauthorized(set);
 	})
