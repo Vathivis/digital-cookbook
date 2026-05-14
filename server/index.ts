@@ -113,7 +113,6 @@ const isTruthyEnv = (value: string | undefined) => {
 	return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 };
 const authEnabled = isTruthyEnv(process.env.AUTH_ENABLED);
-const trustProxyHeaders = isTruthyEnv(process.env.TRUST_PROXY_HEADERS);
 const authUsername = process.env.AUTH_USERNAME?.trim() ?? '';
 const authPassword = process.env.AUTH_PASSWORD ?? '';
 if (authEnabled && (!authUsername || !authPassword)) {
@@ -423,8 +422,7 @@ const normalizeProtocol = (value: string | null) => {
 	return null;
 };
 
-const getForwardedProtocol = (request: Request, options?: { requireTrustedProxy?: boolean }) => {
-	if (options?.requireTrustedProxy && !trustProxyHeaders) return null;
+const getForwardedProtocol = (request: Request) => {
 	return normalizeProtocol(firstHeaderValue(request.headers.get('x-forwarded-proto'))) ?? normalizeProtocol(forwardedParameter(request, 'proto'));
 };
 
@@ -441,7 +439,7 @@ const normalizeHost = (value: string | null, protocol = 'http:') => {
 
 const getRequestOrigins = (request: Request) => {
 	const url = new URL(request.url);
-	const protocol = getForwardedProtocol(request, { requireTrustedProxy: true }) ?? url.protocol;
+	const protocol = getForwardedProtocol(request) ?? url.protocol;
 	const directHost = normalizeHost(request.headers.get('host'), protocol) ?? url.host;
 	return new Set([`${protocol}//${directHost}`]);
 };

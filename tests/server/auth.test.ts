@@ -177,7 +177,7 @@ describe('auth', () => {
 	});
 
 	test('allows same-origin API requests when TLS is terminated by a proxy', async () => {
-		const server = await loadServer({ TRUST_PROXY_HEADERS: 'true' });
+		const server = await loadServer();
 		try {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
@@ -219,7 +219,7 @@ describe('auth', () => {
 	});
 
 	test('does not use forwarded host as same-origin evidence', async () => {
-		const server = await loadServer({ TRUST_PROXY_HEADERS: 'true' });
+		const server = await loadServer();
 		try {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
@@ -250,7 +250,7 @@ describe('auth', () => {
 			const login = await callApi(server.app, '/api/auth/login', {
 				method: 'POST',
 				headers: {
-					Origin: 'http://localhost',
+					Origin: 'https://localhost',
 					'X-Forwarded-Proto': 'https'
 				},
 				body: JSON.stringify({ username: 'chef', password: 'secret' })
