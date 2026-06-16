@@ -1,7 +1,12 @@
 import path from "path"
+import { readFileSync } from 'node:fs'
 import tailwindcss from "@tailwindcss/vite"
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const packageJson = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version?: string }
 
 const normalizeBasePath = (value: string | undefined) => {
   const trimmed = value?.trim()
@@ -15,6 +20,9 @@ const apiProxyTarget = process.env.VITE_API_PROXY_TARGET?.trim() || 'http://loca
 export default defineConfig({
   base: normalizeBasePath(process.env.VITE_BASE_PATH),
   plugins: [react(), tailwindcss()],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version ?? '0.0.0'),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

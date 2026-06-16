@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { incrementUses, decrementUses, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
+import { updateUsesDelta, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
 import { loadImageDataUrl, selectPhotoThumbnailDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
@@ -112,11 +112,18 @@ const toEditableStep = (value: string, keyFactory: () => string): EditableStep =
 interface RecipeCardProps {
 	recipe: RecipeSummary;
 	onChange: () => void;
+	onUsesChange?: (recipeId: number, uses: number) => void;
 }
 
-export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
+export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) {
 	const [likes, setLikes] = useState<string[]>(uniqNames(recipe.likes || []));
 	const [usesCount, setUsesCount] = useState<number>(recipe.uses ?? 0);
+	const usesCountRef = useRef(recipe.uses ?? 0);
+	const pendingUsesDeltaRef = useRef(0);
+	const usesFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const usesFlushInFlightRef = useRef(false);
+	const mountedRef = useRef(true);
+	const recipeIdRef = useRef(recipe.id);
 	const [open, setOpen] = useState(false);
 	const [full, setFull] = useState<RecipeDetail | null>(null);
 	const [editing, setEditing] = useState(false);
@@ -137,8 +144,24 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 	const [tagSuggestionsNode, setTagSuggestionsNode] = useState<HTMLElement | null>(null);
 	const inputRef = useRef<HTMLInputElement | null>(null);
 	useEffect(() => {
-		setUsesCount(recipe.uses ?? 0);
+		recipeIdRef.current = recipe.id;
+	}, [recipe.id]);
+	useEffect(() => {
+		const next = recipe.uses ?? 0;
+		usesCountRef.current = next;
+		setUsesCount(next);
 	}, [recipe.uses]);
+	useEffect(() => () => {
+		mountedRef.current = false;
+		if (usesFlushTimerRef.current) clearTimeout(usesFlushTimerRef.current);
+		const pendingDelta = pendingUsesDeltaRef.current;
+		pendingUsesDeltaRef.current = 0;
+		if (pendingDelta !== 0) {
+			void updateUsesDelta(recipeIdRef.current, pendingDelta).catch((error) => {
+				console.error('Failed to flush pending cook count change', error);
+			});
+		}
+	}, []);
 	useEffect(() => {
 		setLikes(uniqNames(recipe.likes ?? []));
 	}, [recipe.likes]);
@@ -341,30 +364,58 @@ export function RecipeCard({ recipe, onChange }: RecipeCardProps) {
 		return applyDetail(detail);
 	}, [applyDetail]);
 
-	const updateUses = (value: number) => {
-		setUsesCount(value);
-		setFull(prev => (prev ? { ...prev, uses: value } : prev));
-	};
-	const incrementCookCount = async () => {
+	const updateUses = useCallback((value: number) => {
+		const next = Math.max(0, value);
+		usesCountRef.current = next;
+		setUsesCount(next);
+		setFull(prev => (prev ? { ...prev, uses: next } : prev));
+		onUsesChange?.(recipe.id, next);
+	}, [onUsesChange, recipe.id]);
+	const flushUsesDelta = useCallback(async () => {
+		if (usesFlushInFlightRef.current) return;
+		const delta = pendingUsesDeltaRef.current;
+		if (delta === 0) return;
+		pendingUsesDeltaRef.current = 0;
+		usesFlushInFlightRef.current = true;
 		try {
-			const result = await incrementUses(recipe.id);
-			const next = typeof result === 'number' ? result : usesCount + 1;
-			updateUses(next);
-			onChange();
+			const result = await updateUsesDelta(recipe.id, delta);
+			if (typeof result === 'number' && mountedRef.current) updateUses(result);
 		} catch (error) {
-			console.error('Failed to increment cook count', error);
+			console.error('Failed to update cook count', error);
+			if (mountedRef.current) updateUses(usesCountRef.current - delta);
+		} finally {
+			usesFlushInFlightRef.current = false;
+			if (mountedRef.current && pendingUsesDeltaRef.current !== 0) {
+				if (usesFlushTimerRef.current) clearTimeout(usesFlushTimerRef.current);
+				usesFlushTimerRef.current = setTimeout(() => {
+					usesFlushTimerRef.current = null;
+					void flushUsesDelta();
+				}, 150);
+			}
 		}
+	}, [recipe.id, updateUses]);
+	const scheduleUsesFlush = useCallback(() => {
+		if (usesFlushTimerRef.current) clearTimeout(usesFlushTimerRef.current);
+		usesFlushTimerRef.current = setTimeout(() => {
+			usesFlushTimerRef.current = null;
+			void flushUsesDelta();
+		}, 150);
+	}, [flushUsesDelta]);
+	const queueUsesDelta = useCallback((delta: number) => {
+		const current = usesCountRef.current;
+		const next = Math.max(current + delta, 0);
+		const appliedDelta = next - current;
+		if (appliedDelta === 0) return;
+		pendingUsesDeltaRef.current += appliedDelta;
+		updateUses(next);
+		scheduleUsesFlush();
+	}, [scheduleUsesFlush, updateUses]);
+	const incrementCookCount = () => {
+		queueUsesDelta(1);
 	};
-	const decrementCookCount = async () => {
-		if (usesCount <= 0) return;
-		try {
-			const result = await decrementUses(recipe.id);
-			const next = typeof result === 'number' ? result : Math.max(usesCount - 1, 0);
-			updateUses(next);
-			onChange();
-		} catch (error) {
-			console.error('Failed to decrement cook count', error);
-		}
+	const decrementCookCount = () => {
+		if (usesCountRef.current <= 0) return;
+		queueUsesDelta(-1);
 	};
 	const openDialog = async () => {
 		setOpen(true);

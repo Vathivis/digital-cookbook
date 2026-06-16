@@ -6,6 +6,8 @@ import { Pencil, Check, X } from 'lucide-react';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from './ui/alert-dialog';
 import { deriveNextCookbookId } from './cookbook-helpers';
 
+const appVersion = import.meta.env.VITE_APP_VERSION ?? '0.0.0';
+
 interface Props {
 	activeCookbookId: number | null;
 	onSelect: (id: number | null) => void;
@@ -159,6 +161,7 @@ export function CookbookLayoutSidebar({ activeCookbookId, onSelect }: Props) {
 			>
 				Remove Selected Cookbook
 			</Button>
+			<p className="text-center text-xs text-muted-foreground">v{appVersion}</p>
 
 			<AlertDialog open={deleteId != null} onOpenChange={value => { if (!value) { setDeleteId(null); setDeleteConfirm(''); } }}>
 				<AlertDialogContent>
