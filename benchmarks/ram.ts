@@ -22,6 +22,8 @@ const startedAt = new Date().toISOString();
 const options = getBenchmarkOptions();
 const rootStarted = performance.now();
 const sampleIntervalMs = 500;
+const generatedThumbnailDataUrl =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 function benchmarkEnv() {
 	return {
@@ -217,11 +219,7 @@ function loadFirstImageDataUrl(options: BenchmarkOptions) {
 	const filePath = path.join(options.imagesDir, selected);
 	const data = fs.readFileSync(filePath).toString('base64');
 	const photoDataUrl = `data:${contentTypeForFile(filePath)};base64,${data}`;
-	const photoThumbnailDataUrl =
-		'data:image/svg+xml;base64,' +
-		Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#446"/></svg>').toString(
-			'base64'
-		);
+	const photoThumbnailDataUrl = generatedThumbnailDataUrl;
 	return { photoDataUrl, photoThumbnailDataUrl };
 }
 

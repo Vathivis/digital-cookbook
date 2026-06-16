@@ -19,6 +19,9 @@ type RecipeSummary = {
 	steps?: string[];
 };
 
+const generatedThumbnailDataUrl =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+
 type RecipeInput = {
 	cookbook_id: number;
 	title: string;
@@ -112,10 +115,7 @@ async function loadImagePayload(options: BenchmarkOptions) {
 		options.thumbnailMode === 'full'
 			? photoDataUrl
 			: options.thumbnailMode === 'generated'
-				? 'data:image/svg+xml;base64,' +
-					Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#446"/></svg>').toString(
-						'base64'
-					)
+				? generatedThumbnailDataUrl
 				: undefined;
 	return { photoDataUrl, photoThumbnailDataUrl: thumbnailDataUrl };
 }

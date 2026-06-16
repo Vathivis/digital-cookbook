@@ -147,7 +147,9 @@ const units = ['g', 'ml', 'tbsp', 'tsp', 'cup', 'pcs', 'pinch'];
 const tags = ['quick', 'dinner', 'lunch', 'pasta', 'vegetarian', 'family', 'weekend', 'dessert', 'spicy', 'comfort'];
 const likes = ['Alex', 'Jamie', 'Mira', 'Vojta', 'Tereza', 'Klara', 'Matej', 'Nina'];
 const verbs = ['Chop', 'Warm', 'Mix', 'Fold', 'Simmer', 'Bake', 'Season', 'Rest', 'Serve', 'Whisk'];
-const seedCacheVersion = 2;
+const seedCacheVersion = 3;
+const generatedThumbnailDataUrl =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 function lastInsertId(info: { lastInsertRowid?: number | bigint }) {
 	return Number(info.lastInsertRowid ?? 0);
@@ -239,10 +241,8 @@ function writeSeedCache(options: BenchmarkOptions, cacheKey: string, summary: Se
 	fs.writeFileSync(seedCachePath(options), `${JSON.stringify(cache, null, 2)}\n`);
 }
 
-function thumbnailDataUrl(index: number, title: string, color: string) {
-	const escapedTitle = title.replace(/[<>&'"]/g, '');
-	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320"><rect width="480" height="320" fill="${color}"/><text x="24" y="168" font-family="Arial" font-size="26" fill="#fff">Recipe ${index}</text><text x="24" y="208" font-family="Arial" font-size="18" fill="#fff">${escapedTitle.slice(0, 32)}</text></svg>`;
-	return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+function thumbnailDataUrl() {
+	return generatedThumbnailDataUrl;
 }
 
 function clearDatabase(database: BenchmarkDatabase) {
@@ -314,7 +314,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 				options.thumbnailMode === 'full'
 					? photo
 					: options.thumbnailMode === 'generated'
-						? thumbnailDataUrl(recipeIndex, title, `hsl(${rng.int(0, 359)},65%,42%)`)
+						? thumbnailDataUrl()
 						: null;
 			const recipeId = lastInsertId(
 				insertRecipe.run(

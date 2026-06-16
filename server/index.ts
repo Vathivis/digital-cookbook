@@ -107,6 +107,7 @@ const photoVariants = ['full', 'thumbnail_card', 'thumbnail_detail'] as const;
 type PhotoVariant = (typeof photoVariants)[number];
 const photoVariantSchema = z.enum(photoVariants);
 const photoParamSchema = idParamSchema.extend({ variant: photoVariantSchema });
+const allowedPhotoContentTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'image/bmp']);
 
 const PORT = Number(process.env.PORT) || 4000;
 const AUTH_COOKIE_NAME = 'dc_auth';
@@ -653,19 +654,51 @@ type StoredPhoto = {
 	updatedAt?: string | null;
 };
 
-function parseDataUrl(dataUrl: string) {
-	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+type ParsedDataUrl = {
+	contentType: string;
+	body: Buffer | Uint8Array;
+	valid: boolean;
+};
+
+function normalizeContentType(contentType: string) {
+	return contentType.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream';
+}
+
+function isAllowedPhotoContentType(contentType: string) {
+	return allowedPhotoContentTypes.has(normalizeContentType(contentType));
+}
+
+function parseDataUrl(dataUrl: string): ParsedDataUrl {
+	const match = /^data:([^,]*),(.*)$/s.exec(dataUrl);
 	if (!match) {
 		return {
 			contentType: 'application/octet-stream',
-			body: new TextEncoder().encode(dataUrl)
+			body: new TextEncoder().encode(dataUrl),
+			valid: false
 		};
 	}
-	const contentType = match[1] || 'application/octet-stream';
-	const isBase64 = Boolean(match[2]);
-	const data = match[3] ?? '';
-	const body = isBase64 ? Buffer.from(data, 'base64') : new TextEncoder().encode(decodeURIComponent(data));
-	return { contentType, body };
+	const metadata = match[1] ?? '';
+	const metadataParts = metadata.split(';').map((part) => part.trim());
+	const contentType = normalizeContentType(metadataParts[0] || 'application/octet-stream');
+	const isBase64 = metadataParts.slice(1).some((part) => part.toLowerCase() === 'base64');
+	const data = match[2] ?? '';
+	if (isBase64) {
+		return { contentType, body: Buffer.from(data, 'base64'), valid: true };
+	}
+	try {
+		return { contentType, body: new TextEncoder().encode(decodeURIComponent(data)), valid: true };
+	} catch {
+		return {
+			contentType: 'application/octet-stream',
+			body: new TextEncoder().encode(data),
+			valid: false
+		};
+	}
+}
+
+function isAllowedPhotoDataUrl(dataUrl: string) {
+	const parsed = parseDataUrl(dataUrl);
+	return parsed.valid && isAllowedPhotoContentType(parsed.contentType);
 }
 
 function dataUrlToStoredPhoto(dataUrl: string): StoredPhoto {
@@ -1032,10 +1065,13 @@ export const app = new Elysia({
 		if (!exists) return notFound(set);
 		const photo = getRecipePhotoVariant(id, variant);
 		if (!photo) return notFound(set);
+		const safeContentType = isAllowedPhotoContentType(photo.contentType);
 		return new Response(photo.data, {
 			headers: {
 				'Cache-Control': 'private, max-age=31536000, immutable',
-				'Content-Type': photo.contentType
+				'Content-Type': safeContentType ? normalizeContentType(photo.contentType) : 'application/octet-stream',
+				'X-Content-Type-Options': 'nosniff',
+				...(safeContentType ? {} : { 'Content-Disposition': 'attachment; filename="recipe-photo.bin"' })
 			}
 		});
 	})
@@ -1092,6 +1128,12 @@ export const app = new Elysia({
 	.post('/api/recipes', ({ body, set }) => {
 		const parsed = recipeCreateSchema.safeParse(body ?? {});
 		if (!parsed.success) return validationError(set, parsed.error);
+		if (parsed.data.photoDataUrl != null && !isAllowedPhotoDataUrl(parsed.data.photoDataUrl)) {
+			return badRequest(set, 'photoDataUrl must be a supported image data URL');
+		}
+		if (parsed.data.photoThumbnailDataUrl != null && !isAllowedPhotoDataUrl(parsed.data.photoThumbnailDataUrl)) {
+			return badRequest(set, 'photoThumbnailDataUrl must be a supported image data URL');
+		}
 		if (parsed.data.photoThumbnailDataUrl != null && !parsed.data.photoDataUrl) {
 			return badRequest(set, 'photoThumbnailDataUrl requires supplied photoDataUrl');
 		}
@@ -1131,6 +1173,12 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoDataUrl');
 		const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoThumbnailDataUrl');
+		if (parsed.data.photoDataUrl != null && !isAllowedPhotoDataUrl(parsed.data.photoDataUrl)) {
+			return badRequest(set, 'photoDataUrl must be a supported image data URL');
+		}
+		if (parsed.data.photoThumbnailDataUrl != null && !isAllowedPhotoDataUrl(parsed.data.photoThumbnailDataUrl)) {
+			return badRequest(set, 'photoThumbnailDataUrl must be a supported image data URL');
+		}
 		if (hasPhotoThumbnailDataUrl && parsed.data.photoThumbnailDataUrl != null) {
 			const hasFullPhoto = hasPhotoDataUrl
 				? parsed.data.photoDataUrl !== null

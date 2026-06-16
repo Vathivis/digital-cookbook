@@ -115,6 +115,80 @@ test('recipe create rejects thumbnail-only photo payloads', async () => {
 	await expect(res.json()).resolves.toEqual({ error: 'photoThumbnailDataUrl requires supplied photoDataUrl' });
 });
 
+test('recipe photo endpoints reject unsafe MIME types and do not echo legacy unsafe types', async () => {
+	const parameterizedCreate = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Parameterized Photo Recipe',
+			photoDataUrl: 'data:image/png;charset=utf-8;base64,QUJD'
+		})
+	});
+	expect(parameterizedCreate.status).toBe(200);
+	const { id: parameterizedId } = (await parameterizedCreate.json()) as { id: number };
+	const parameterizedDetail = await callApi(`/api/recipes/${parameterizedId}`);
+	expect(parameterizedDetail.status).toBe(200);
+	const parameterizedPayload = await parameterizedDetail.json();
+	const parameterizedPhotoUrl = expectPhotoUrl(parameterizedPayload.photo, parameterizedId, 'full');
+	const parameterizedPhoto = await callApi(parameterizedPhotoUrl);
+	expect(parameterizedPhoto.status).toBe(200);
+	expect(parameterizedPhoto.headers.get('Content-Type')).toBe('image/png');
+	expect(Buffer.from(await parameterizedPhoto.arrayBuffer()).toString('utf8')).toBe('ABC');
+
+	const unsafeCreate = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Unsafe Photo Recipe',
+			photoDataUrl: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='
+		})
+	});
+	expect(unsafeCreate.status).toBe(400);
+	await expect(unsafeCreate.json()).resolves.toEqual({ error: 'photoDataUrl must be a supported image data URL' });
+
+	const malformedCreate = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Malformed Photo Recipe',
+			photoDataUrl: 'data:image/png,%ZZ'
+		})
+	});
+	expect(malformedCreate.status).toBe(400);
+	await expect(malformedCreate.json()).resolves.toEqual({ error: 'photoDataUrl must be a supported image data URL' });
+
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Legacy Unsafe Photo Recipe'
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const { id } = (await createRes.json()) as { id: number };
+
+	const unsafePatch = await callApi(`/api/recipes/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ photoDataUrl: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==' })
+	});
+	expect(unsafePatch.status).toBe(400);
+	await expect(unsafePatch.json()).resolves.toEqual({ error: 'photoDataUrl must be a supported image data URL' });
+
+	const now = new Date().toISOString();
+	database
+		.prepare(
+			`INSERT INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+			 VALUES (?, 'full', 'text/html', ?, ?, ?)`
+		)
+		.run(id, Buffer.from('<script>alert(1)</script>'), now, now);
+
+	const legacyPhoto = await callApi(`/api/recipes/${id}/photos/full`);
+	expect(legacyPhoto.status).toBe(200);
+	expect(legacyPhoto.headers.get('Content-Type')).toBe('application/octet-stream');
+	expect(legacyPhoto.headers.get('X-Content-Type-Options')).toBe('nosniff');
+	expect(legacyPhoto.headers.get('Content-Disposition')).toBe('attachment; filename="recipe-photo.bin"');
+});
+
 test('static file serving blocks traversal via encoded separators', async () => {
 	const siblingDistDir = path.resolve(process.cwd(), 'dist2');
 	const siblingFilePath = path.join(siblingDistDir, 'secret.txt');
@@ -278,7 +352,7 @@ test('legacy photo variant data URLs migrate into blob storage', async () => {
 		INSERT INTO cookbooks (id, name) VALUES (1, 'Legacy');
 		INSERT INTO recipes (id, cookbook_id, title) VALUES (1, 1, 'Legacy Variant Photo');
 		INSERT INTO recipe_photo_variants (recipe_id, variant, data_url)
-		VALUES (1, 'full', 'data:image/png;base64,QUJD');
+		VALUES (1, 'full', 'data:image/png;charset=utf-8;base64,QUJD');
 	`);
 	legacyDb.close();
 
