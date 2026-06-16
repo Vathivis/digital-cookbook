@@ -253,10 +253,11 @@ async function browserProcessId(browser: Browser) {
 async function driveMemoryFlow(page: Page, roles: MemoryRole[], samples: MemorySampleMetric[], phases: MemoryPhaseMetric[]) {
 	const scratchTitle = `Benchmark RAM Scratch ${Date.now()}`;
 	let scratchId: number | null = null;
+	const webUrl = `http://127.0.0.1:${options.webPort}/`;
 
 	try {
 		await measurePhase('initial-load', roles, samples, phases, async () => {
-			await page.goto('/');
+			await page.goto(webUrl);
 			await page.getByPlaceholder('Search recipes...').waitFor({ state: 'visible' });
 			await page.getByText(/Benchmark Recipe 0001/).first().waitFor({ state: 'visible' });
 		});
