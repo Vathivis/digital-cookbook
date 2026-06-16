@@ -7,14 +7,20 @@ import {
 	getBenchmarkOptions,
 	type BenchmarkOptions,
 } from './config';
-import { writeBenchmarkReport, type ApiCallMetric } from './report';
+import { writeBenchmarkReport, type ApiCallMetric, type IterationMetric } from './report';
 
 type RecipeSummary = {
 	id: number;
 	title: string;
+	photo?: string | null;
+	photoFull?: string | null;
+	photoDetail?: string | null;
 	ingredients?: unknown[];
 	steps?: string[];
 };
+
+const generatedThumbnailDataUrl =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 type RecipeInput = {
 	cookbook_id: number;
@@ -109,10 +115,7 @@ async function loadImagePayload(options: BenchmarkOptions) {
 		options.thumbnailMode === 'full'
 			? photoDataUrl
 			: options.thumbnailMode === 'generated'
-				? 'data:image/svg+xml;base64,' +
-					Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#446"/></svg>').toString(
-						'base64'
-					)
+				? generatedThumbnailDataUrl
 				: undefined;
 	return { photoDataUrl, photoThumbnailDataUrl: thumbnailDataUrl };
 }
@@ -167,7 +170,11 @@ function buildScratchRecipe(iteration: number, imagePayload: Awaited<ReturnType<
 }
 
 async function runScenarioSet(options: BenchmarkOptions) {
+	const scenarioStarted = performance.now();
 	const calls: ApiCallMetric[] = [];
+	const iterationTimings: IterationMetric[] = [];
+	const readDurations: number[] = [];
+	const mutationDurations: number[] = [];
 	const record = async (label: string, pathname: string, init?: RequestInit) => {
 		const result = await timedFetch(options, label, pathname, init);
 		calls.push(result.metric);
@@ -175,7 +182,16 @@ async function runScenarioSet(options: BenchmarkOptions) {
 	};
 
 	for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+		const iterationStarted = performance.now();
+		await record('health:root', '/health');
 		await record('health', '/api/health');
+		await record('auth:status', '/api/auth/status');
+		await record('auth:login', '/api/auth/login', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'benchmark', password: 'benchmark' }),
+		});
+		await record('auth:logout', '/api/auth/logout', { method: 'POST' });
 		await record('cookbooks:list', '/api/cookbooks');
 		const listText = await record('recipes:list', '/api/recipes?cookbookId=1');
 		const recipes = parseJson<RecipeSummary[]>(listText, []);
@@ -184,12 +200,43 @@ async function runScenarioSet(options: BenchmarkOptions) {
 		await record('recipes:search:pomodoro', '/api/recipes/search?cookbookId=1&q=pomodoro');
 		await record('recipes:search:tomato', '/api/recipes/search?cookbookId=1&q=tomato');
 		await record('ingredients:suggest', '/api/ingredients?cookbookId=1&q=tom&limit=20');
-		await record('recipes:detail', `/api/recipes/${targetId}`);
+		const detailText = await record('recipes:detail', `/api/recipes/${targetId}`);
+		const detail = parseJson<RecipeSummary>(detailText, {} as RecipeSummary);
+		if (target?.photo) {
+			await record('recipes:photo:thumbnail-card', target.photo);
+		}
+		if (detail.photoFull) {
+			await record('recipes:photo:full', detail.photoFull);
+		}
+		if (detail.photoDetail) {
+			await record('recipes:photo:thumbnail-detail', detail.photoDetail);
+		}
+		await record('tags:list', '/api/tags');
+		await record('ingredients:list-global', '/api/ingredients?limit=50');
+		const durationMs = performance.now() - iterationStarted;
+		readDurations[iteration] = durationMs;
+		iterationTimings.push({ label: 'read iteration', iteration, durationMs });
 	}
 
 	const imagePayload = await loadImagePayload(options);
 
 	for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+		const iterationStarted = performance.now();
+		const cookbookName = `Benchmark Scratch Cookbook ${Date.now()}-${iteration}`;
+		const cookbookText = await record('cookbook:create', '/api/cookbooks', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name: cookbookName }),
+		});
+		const cookbook = parseJson<{ id?: number }>(cookbookText, {});
+		if (typeof cookbook.id === 'number') {
+			await record('cookbook:patch', `/api/cookbooks/${cookbook.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: `${cookbookName} Updated` }),
+			});
+			await record('cookbook:delete', `/api/cookbooks/${cookbook.id}`, { method: 'DELETE' });
+		}
 		const scratch = buildScratchRecipe(iteration, imagePayload);
 		const createText = await record('recipe:create:with-image', '/api/recipes', {
 			method: 'POST',
@@ -197,27 +244,56 @@ async function runScenarioSet(options: BenchmarkOptions) {
 			body: JSON.stringify(scratch),
 		});
 		const created = parseJson<{ id?: number }>(createText, {});
-		if (typeof created.id !== 'number') continue;
-		await record('uses:increment', `/api/recipes/${created.id}/increment-uses`, { method: 'POST' });
-		await record('uses:decrement', `/api/recipes/${created.id}/decrement-uses`, { method: 'POST' });
-		await record('recipe:patch:scalar', `/api/recipes/${created.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ description: `Benchmark scalar edit ${Date.now()}-${iteration}` }),
-		});
-		await record('recipe:patch-reorder:detail', `/api/recipes/${created.id}`);
-		await record('recipe:patch:reorder', `/api/recipes/${created.id}`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				ingredients: [...scratch.ingredients].reverse(),
-				steps: [...scratch.steps].reverse(),
-			}),
-		});
-		await record('recipe:cleanup:delete', `/api/recipes/${created.id}`, { method: 'DELETE' });
+		if (typeof created.id === 'number') {
+			const tagName = `benchmark-tag-${iteration}`;
+			const likeName = `Benchmark Like ${iteration}`;
+			await record('recipe:tag:add', `/api/recipes/${created.id}/tags`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: tagName }),
+			});
+			await record('recipe:tag:delete', `/api/recipes/${created.id}/tags/${encodeURIComponent(tagName)}`, { method: 'DELETE' });
+			await record('recipe:like:add', `/api/recipes/${created.id}/likes`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: likeName }),
+			});
+			await record('recipe:like:delete', `/api/recipes/${created.id}/likes/${encodeURIComponent(likeName)}`, { method: 'DELETE' });
+			await record('uses:increment', `/api/recipes/${created.id}/increment-uses`, { method: 'POST' });
+			await record('uses:decrement', `/api/recipes/${created.id}/decrement-uses`, { method: 'POST' });
+			await record('recipe:patch:scalar', `/api/recipes/${created.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ description: `Benchmark scalar edit ${Date.now()}-${iteration}` }),
+			});
+			await record('recipe:patch-reorder:detail', `/api/recipes/${created.id}`);
+			await record('recipe:patch:reorder', `/api/recipes/${created.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					ingredients: [...scratch.ingredients].reverse(),
+					steps: [...scratch.steps].reverse(),
+				}),
+			});
+			await record('recipe:cleanup:delete', `/api/recipes/${created.id}`, { method: 'DELETE' });
+		}
+		const durationMs = performance.now() - iterationStarted;
+		mutationDurations[iteration] = durationMs;
+		iterationTimings.push({ label: 'mutation iteration', iteration, durationMs });
 	}
 
-	return calls;
+	for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+		const readMs = readDurations[iteration];
+		const mutationMs = mutationDurations[iteration];
+		if (readMs == null || mutationMs == null) continue;
+		iterationTimings.push({ label: 'read + mutation iteration', iteration, durationMs: readMs + mutationMs });
+	}
+
+	return {
+		calls,
+		iterationTimings,
+		totalDurationMs: performance.now() - scenarioStarted,
+	};
 }
 
 if (import.meta.main) {
@@ -228,15 +304,18 @@ if (import.meta.main) {
 	serverApp.listen({ hostname: '127.0.0.1', port: options.apiPort });
 	try {
 		await waitForServer(options);
-		const apiCalls = await runScenarioSet(options);
+		const { calls: apiCalls, iterationTimings, totalDurationMs } = await runScenarioSet(options);
 		const written = writeBenchmarkReport(options, {
 			name: 'benchmark-backend-api',
 			startedAt,
 			options,
+			totalDurationMs,
 			apiCalls,
+			iterationTimings,
 			notes: [
 				`Measured every direct benchmark API call against ${options.baseUrl}.`,
 				'Read scenarios and mutation scenarios both scale with --iterations.',
+				'Photo variant endpoints are fetched per read iteration when present, including full-size photo responses.',
 				'Each mutation iteration creates a scratch recipe, edits it, and records a timed cleanup delete so the seeded recipe set stays stable.',
 			],
 		});

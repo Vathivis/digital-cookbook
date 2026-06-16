@@ -46,6 +46,23 @@ type SeedCache = {
 	summary: Omit<SeedSummary, 'durationMs' | 'cached'>;
 };
 
+function parseDataUrl(dataUrl: string) {
+	const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+	if (!match) {
+		return {
+			contentType: 'application/octet-stream',
+			data: Buffer.from(dataUrl)
+		};
+	}
+	const contentType = match[1] || 'application/octet-stream';
+	const isBase64 = Boolean(match[2]);
+	const payload = match[3] ?? '';
+	return {
+		contentType,
+		data: isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload))
+	};
+}
+
 class Rng {
 	private state: number;
 
@@ -130,7 +147,9 @@ const units = ['g', 'ml', 'tbsp', 'tsp', 'cup', 'pcs', 'pinch'];
 const tags = ['quick', 'dinner', 'lunch', 'pasta', 'vegetarian', 'family', 'weekend', 'dessert', 'spicy', 'comfort'];
 const likes = ['Alex', 'Jamie', 'Mira', 'Vojta', 'Tereza', 'Klara', 'Matej', 'Nina'];
 const verbs = ['Chop', 'Warm', 'Mix', 'Fold', 'Simmer', 'Bake', 'Season', 'Rest', 'Serve', 'Whisk'];
-const seedCacheVersion = 1;
+const seedCacheVersion = 3;
+const generatedThumbnailDataUrl =
+	'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 
 function lastInsertId(info: { lastInsertRowid?: number | bigint }) {
 	return Number(info.lastInsertRowid ?? 0);
@@ -222,17 +241,26 @@ function writeSeedCache(options: BenchmarkOptions, cacheKey: string, summary: Se
 	fs.writeFileSync(seedCachePath(options), `${JSON.stringify(cache, null, 2)}\n`);
 }
 
-function thumbnailDataUrl(index: number, title: string, color: string) {
-	const escapedTitle = title.replace(/[<>&'"]/g, '');
-	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320"><rect width="480" height="320" fill="${color}"/><text x="24" y="168" font-family="Arial" font-size="26" fill="#fff">Recipe ${index}</text><text x="24" y="208" font-family="Arial" font-size="18" fill="#fff">${escapedTitle.slice(0, 32)}</text></svg>`;
-	return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+function thumbnailDataUrl() {
+	return generatedThumbnailDataUrl;
 }
 
 function clearDatabase(database: BenchmarkDatabase) {
 	database.exec('PRAGMA foreign_keys = OFF');
 	database.exec('BEGIN TRANSACTION');
 	try {
-		for (const table of ['recipe_tags', 'recipe_likes', 'ingredients', 'steps', 'notes', 'recipes', 'tags', 'ingredient_names', 'cookbooks']) {
+		for (const table of [
+			'recipe_tags',
+			'recipe_likes',
+			'recipe_photo_variants',
+			'ingredients',
+			'steps',
+			'notes',
+			'recipes',
+			'tags',
+			'ingredient_names',
+			'cookbooks',
+		]) {
 			database.exec(`DELETE FROM ${table}`);
 		}
 		database.exec("DELETE FROM sqlite_sequence WHERE name IN ('cookbooks','recipes','tags','ingredient_names','ingredients','steps','notes','recipe_likes')");
@@ -255,7 +283,11 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 
 	const insertCookbook = database.prepare('INSERT INTO cookbooks (name) VALUES (?)');
 	const insertRecipe = database.prepare(
-		'INSERT INTO recipes (cookbook_id, title, description, author, photo, photo_thumbnail, uses, servings) VALUES (?,?,?,?,?,?,?,?)'
+		'INSERT INTO recipes (cookbook_id, title, description, author, uses, servings) VALUES (?,?,?,?,?,?)'
+	);
+	const insertPhotoVariant = database.prepare(
+		`INSERT INTO recipe_photo_variants (recipe_id, variant, content_type, data, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
 	);
 	const insertIngredientName = database.prepare('INSERT OR IGNORE INTO ingredient_names (name) VALUES (?)');
 	const getIngredientName = database.prepare('SELECT id FROM ingredient_names WHERE name = ?');
@@ -282,7 +314,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 				options.thumbnailMode === 'full'
 					? photo
 					: options.thumbnailMode === 'generated'
-						? thumbnailDataUrl(recipeIndex, title, `hsl(${rng.int(0, 359)},65%,42%)`)
+						? thumbnailDataUrl()
 						: null;
 			const recipeId = lastInsertId(
 				insertRecipe.run(
@@ -290,12 +322,16 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 					title,
 					`Generated benchmark recipe ${recipeIndex} for measuring list, search, edit, and photo payload behavior.`,
 					`Benchmark Author ${rng.int(1, 12)}`,
-					photo,
-					thumbnail,
 					rng.int(0, 35),
 					rng.int(1, 8)
 				)
 			);
+			if (photo) {
+				const fullPhoto = parseDataUrl(photo);
+				const cardPhoto = parseDataUrl(thumbnail ?? photo);
+				insertPhotoVariant.run(recipeId, 'full', fullPhoto.contentType, fullPhoto.data);
+				insertPhotoVariant.run(recipeId, 'thumbnail_card', cardPhoto.contentType, cardPhoto.data);
+			}
 
 			const ingredientCount = rng.int(options.minIngredients, options.maxIngredients);
 			const selectedIngredients = rng.sample(ingredients, ingredientCount);
@@ -344,6 +380,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 		for (const statement of [
 			insertCookbook,
 			insertRecipe,
+			insertPhotoVariant,
 			insertIngredientName,
 			getIngredientName,
 			insertIngredient,
@@ -379,6 +416,12 @@ if (import.meta.main) {
 	const options = getBenchmarkOptions();
 	const args = readCliArgs();
 	applyBenchmarkEnv(options);
+	const cacheKey = seedCacheKey(options);
+	const cache = readSeedCache(options);
+	const cached = !args.has('force') && fs.existsSync(options.dbPath) && cache?.version === seedCacheVersion && cache.cacheKey === cacheKey;
+	if (!cached) {
+		process.env.BENCHMARK_RESET_PHOTO_VARIANTS = 'true';
+	}
 	const { database } = await import(`../server/index.ts?benchmark-seed=${Date.now()}`);
 	const summary = await ensureBenchmarkDatabase(database as BenchmarkDatabase, options, args.has('force'));
 	const prefix = summary.cached ? 'Using cached seed' : 'Seeded';

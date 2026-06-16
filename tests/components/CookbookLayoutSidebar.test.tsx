@@ -5,6 +5,9 @@ import { CookbookLayoutSidebar } from '@/components/CookbookLayout';
 
 const happyWindow = new HappyWindow();
 const globalWindow = happyWindow as unknown as Window & typeof globalThis;
+globalWindow.Error = Error;
+globalWindow.SyntaxError = SyntaxError;
+globalWindow.TypeError = TypeError;
 Object.assign(globalThis, {
 	window: globalWindow,
 	document: globalWindow.document,
