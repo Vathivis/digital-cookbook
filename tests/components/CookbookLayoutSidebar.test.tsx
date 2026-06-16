@@ -112,7 +112,9 @@ describe('CookbookLayoutSidebar', () => {
 			await waitFor(() => {
 				expect(getByText('Recovered')).toBeTruthy();
 			});
-			expect(onSelect).toHaveBeenCalledWith(2);
+			await waitFor(() => {
+				expect(onSelect).toHaveBeenCalledWith(2);
+			});
 		} finally {
 			console.error = originalConsoleError;
 		}
