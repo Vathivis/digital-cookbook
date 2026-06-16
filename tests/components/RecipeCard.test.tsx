@@ -61,6 +61,12 @@ afterEach(() => {
 	mock.restore();
 });
 
+const json = (body: unknown, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
 const baseRecipe = {
 	id: 1,
 	cookbook_id: 1,
@@ -114,6 +120,43 @@ describe('RecipeCard', () => {
 		} finally {
 			globalThis.fetch = originalFetch;
 			console.error = originalConsoleError;
+		}
+	});
+
+	test('batches rapid cook count clicks into one delta request', async () => {
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1/uses-delta')) {
+				return Promise.resolve(json({ ok: true, uses: 3 }));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const onChange = mock(() => {});
+		const onUsesChange = mock(() => {});
+
+		try {
+			const { getByTitle, getByText } = render(
+				<RecipeCard recipe={{ ...baseRecipe, uses: 0 }} onChange={onChange} onUsesChange={onUsesChange} />
+			);
+
+			const increment = getByTitle('Increment uses');
+			fireEvent.click(increment);
+			fireEvent.click(increment);
+			fireEvent.click(increment);
+
+			expect(getByText('3')).toBeTruthy();
+			expect(onUsesChange).toHaveBeenLastCalledWith(1, 3);
+			expect(onChange).not.toHaveBeenCalled();
+
+			await waitFor(() => {
+				expect(fetchMock).toHaveBeenCalledTimes(1);
+			});
+			const [, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit | undefined];
+			expect(init?.body).toBe(JSON.stringify({ delta: 3 }));
+		} finally {
+			globalThis.fetch = originalFetch;
 		}
 	});
 });

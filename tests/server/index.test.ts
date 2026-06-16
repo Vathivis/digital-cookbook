@@ -617,6 +617,43 @@ test('recipe mutations handle image clears and invalid ids', async () => {
 	expect(invalidLikeRemove.status).toBe(404);
 });
 
+test('recipe uses delta batches counter updates and clamps at zero', async () => {
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Uses Delta Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const { id } = (await createRes.json()) as { id: number };
+
+	const increment = await callApi(`/api/recipes/${id}/uses-delta`, {
+		method: 'POST',
+		body: JSON.stringify({ delta: 5 })
+	});
+	expect(increment.status).toBe(200);
+	await expect(increment.json()).resolves.toEqual({ ok: true, uses: 5 });
+
+	const decrement = await callApi(`/api/recipes/${id}/uses-delta`, {
+		method: 'POST',
+		body: JSON.stringify({ delta: -8 })
+	});
+	expect(decrement.status).toBe(200);
+	await expect(decrement.json()).resolves.toEqual({ ok: true, uses: 0 });
+
+	const missing = await callApi('/api/recipes/99999/uses-delta', {
+		method: 'POST',
+		body: JSON.stringify({ delta: 1 })
+	});
+	expect(missing.status).toBe(404);
+});
+
 test('recipe thumbnail data URL length cap is configurable via env', async () => {
 	const oversizedThumbnail = `data:image/jpeg;base64,${'x'.repeat(80)}`;
 	const res = await callApi('/api/recipes', {

@@ -175,6 +175,16 @@ export async function decrementUses(recipeId: number) {
 	return typeof data.uses === 'number' ? data.uses : undefined;
 }
 
+export async function updateUsesDelta(recipeId: number, delta: number) {
+	const response = await request(`${base}/recipes/${recipeId}/uses-delta`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ delta })
+	});
+	const data = await response.json().catch(() => ({} as { uses?: number }));
+	return typeof data.uses === 'number' ? data.uses : undefined;
+}
+
 
 export async function addTagToRecipe(recipeId: number, name: string) {
 	await request(`${base}/recipes/${recipeId}/tags`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });

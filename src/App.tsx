@@ -166,6 +166,9 @@ function App() {
 	useEffect(() => {
 		reloadRef.current = reload;
 	}, [reload]);
+	const updateRecipeUses = useCallback((recipeId: number, uses: number) => {
+		setAllRecipes(prev => prev.map(recipe => recipe.id === recipeId ? { ...recipe, uses } : recipe));
+	}, []);
 	const queryEffectInitializedRef = useRef(false);
 	const handleCookbookSelect = useCallback((id: number | null) => {
 		setActiveCookbook(id);
@@ -284,7 +287,7 @@ function App() {
 				<main className="flex flex-1 overflow-hidden">
 					<div className="flex-1 p-6 overflow-auto">
 						{activeCookbook && (
-							<AnimatedRecipeGrid recipes={filtered} onChange={reload} cookbookId={activeCookbook} />
+							<AnimatedRecipeGrid recipes={filtered} onChange={reload} onUsesChange={updateRecipeUses} cookbookId={activeCookbook} />
 						)}
 					</div>
 					<aside className="w-72 border-l border-border p-4 flex flex-col gap-4 bg-sidebar/60 backdrop-blur supports-[backdrop-filter]:bg-sidebar/40 overflow-y-auto">
@@ -359,7 +362,17 @@ function App() {
 	);
 }
 
-function AnimatedRecipeGrid({ recipes, onChange, cookbookId }: { recipes: Recipe[]; onChange: () => Promise<void> | void; cookbookId: number }) {
+function AnimatedRecipeGrid({
+	recipes,
+	onChange,
+	onUsesChange,
+	cookbookId
+}: {
+	recipes: Recipe[];
+	onChange: () => Promise<void> | void;
+	onUsesChange: (recipeId: number, uses: number) => void;
+	cookbookId: number;
+}) {
 	const EXIT_MS = 300;
 	const items = useAnimatedItems(recipes, EXIT_MS);
 	const ids = items.filter(i=>!i.exiting).map(i => i.id);
@@ -383,7 +396,7 @@ function AnimatedRecipeGrid({ recipes, onChange, cookbookId }: { recipes: Recipe
 						className={common + ' surface-transition'}
 						style={style}
 					>
-						<RecipeCard recipe={it.recipe} onChange={() => { void onChange(); }} />
+						<RecipeCard recipe={it.recipe} onChange={() => { void onChange(); }} onUsesChange={onUsesChange} />
 					</div>
 				);
 			})}

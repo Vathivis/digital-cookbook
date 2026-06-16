@@ -92,6 +92,7 @@ const ingredientsQuerySchema = z.object({
 	limit: z.coerce.number().int().positive().max(5000).optional()
 });
 const nameSchema = z.object({ name: nonEmptyString.max(255) });
+const usesDeltaSchema = z.object({ delta: z.number().int().min(-1000).max(1000) }).strict();
 const loginSchema = z
 	.object({
 		username: z.string(),
@@ -1326,6 +1327,19 @@ export const app = new Elysia({
 		if (info.changes === 0) return notFound(set);
 		const row = getStatement<{ uses: number }>('SELECT uses FROM recipes WHERE id = ?', id);
 		return { ok: true, uses: row?.uses ?? 0 };
+	})
+	.post('/api/recipes/:id/uses-delta', ({ params, body, set }) => {
+		const parsed = idParamSchema.safeParse(params);
+		if (!parsed.success) return validationError(set, parsed.error);
+		const payload = usesDeltaSchema.safeParse(body ?? {});
+		if (!payload.success) return validationError(set, payload.error);
+		const row = getStatement<{ uses: number }>(
+			'UPDATE recipes SET uses = MAX(uses + ?, 0) WHERE id = ? RETURNING uses',
+			payload.data.delta,
+			parsed.data.id
+		);
+		if (!row) return notFound(set);
+		return { ok: true, uses: row.uses };
 	})
 	.post('/api/recipes/:id/decrement-uses', ({ params, set }) => {
 		const parsed = idParamSchema.safeParse(params);
