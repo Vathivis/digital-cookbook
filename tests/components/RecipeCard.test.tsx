@@ -22,6 +22,7 @@ Object.assign(globalThis, {
 	InputEvent: globalWindow.InputEvent,
 	KeyboardEvent: globalWindow.KeyboardEvent,
 	MouseEvent: globalWindow.MouseEvent,
+	PointerEvent: globalWindow.PointerEvent,
 	SubmitEvent: globalWindow.SubmitEvent,
 	FormData: globalWindow.FormData,
 });
@@ -94,7 +95,7 @@ describe('RecipeCard', () => {
 	});
 
 	test('does not remove an existing like when duplicate quick-like submission would fail', async () => {
-		const fetchMock = mock(() => Promise.reject(new Error('network fail')));
+		const fetchMock = mock(() => Promise.resolve(json(['Alex'])));
 		const originalFetch = globalThis.fetch;
 		globalThis.fetch = fetchMock as unknown as typeof fetch;
 		const originalConsoleError = console.error;
@@ -116,10 +117,45 @@ describe('RecipeCard', () => {
 				expect(queryByPlaceholderText('Name who likes this')).toBeNull();
 			});
 			expect(getByText('Alex')).toBeTruthy();
-			expect(fetchMock).toHaveBeenCalledTimes(0);
+			const postCalls = fetchMock.mock.calls.filter(([input, init]) => {
+				const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				return url.endsWith('/api/recipes/1/likes') && init?.method === 'POST';
+			});
+			expect(postCalls).toHaveLength(0);
 		} finally {
 			globalThis.fetch = originalFetch;
 			console.error = originalConsoleError;
+		}
+	});
+
+	test('shows saved like names in quick-like autocomplete', async () => {
+		const fetchMock = mock((input: string | URL | Request, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.startsWith('/api/likes')) return Promise.resolve(json(['Sam']));
+			if (url.endsWith('/api/recipes/1/likes') && init?.method === 'POST') return Promise.resolve(json({ ok: true }));
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getByText, queryByPlaceholderText } = render(
+				<RecipeCard recipe={{ ...baseRecipe }} onChange={() => {}} />
+			);
+
+			fireEvent.click(getByText('like'));
+
+			await waitFor(() => {
+				expect(getByText('Sam')).toBeTruthy();
+			});
+			fireEvent.pointerDown(getByText('Sam'));
+
+			await waitFor(() => {
+				expect(queryByPlaceholderText('Name who likes this')).toBeNull();
+			});
+			expect(getByText('Sam')).toBeTruthy();
+		} finally {
+			globalThis.fetch = originalFetch;
 		}
 	});
 
