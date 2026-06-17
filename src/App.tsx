@@ -90,6 +90,8 @@ function App() {
 	const [tagMode, setTagMode] = useState<FilterMode>('AND');
 	const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
 	const [ingredientMode, setIngredientMode] = useState<FilterMode>('AND');
+	const [selectedLikes, setSelectedLikes] = useState<string[]>([]);
+	const [likeMode, setLikeMode] = useState<FilterMode>('AND');
 	const [sortMode, setSortMode] = useState<SortMode>('AZ');
 	const [theme, setTheme] = useState<'light' | 'dark'>(() => {
 		if (typeof localStorage !== 'undefined') {
@@ -195,9 +197,10 @@ function App() {
 		setAllRecipes([]);
 		setSelectedTags([]);
 		setSelectedIngredients([]);
+		setSelectedLikes([]);
 	}, [authStatus]);
 	useEffect(() => { reload(); }, [reload]);
-	useEffect(() => { setSelectedTags([]); setSelectedIngredients([]); }, [activeCookbook]);
+	useEffect(() => { setSelectedTags([]); setSelectedIngredients([]); setSelectedLikes([]); }, [activeCookbook]);
 	useEffect(() => {
 		if (!queryEffectInitializedRef.current) {
 			queryEffectInitializedRef.current = true;
@@ -218,6 +221,11 @@ function App() {
 		allRecipes.forEach(r => (r.ingredientNames || []).forEach((ing: string) => set.add(ing)));
 		return Array.from(set).sort((a, b) => a.localeCompare(b));
 	}, [allRecipes]);
+	const allLikes = useMemo(() => {
+		const set = new Set<string>();
+		allRecipes.forEach(r => (r.likes || []).forEach((name: string) => set.add(name)));
+		return Array.from(set).sort((a, b) => a.localeCompare(b));
+	}, [allRecipes]);
 	const filtered = useMemo(
 		() =>
 			filterAndSortRecipes(allRecipes, {
@@ -225,9 +233,11 @@ function App() {
 				tagMode,
 				selectedIngredients,
 				ingredientMode,
+				selectedLikes,
+				likeMode,
 				sortMode
 			}),
-		[allRecipes, selectedTags, tagMode, selectedIngredients, ingredientMode, sortMode]
+		[allRecipes, selectedTags, tagMode, selectedIngredients, ingredientMode, selectedLikes, likeMode, sortMode]
 	);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
@@ -249,6 +259,9 @@ function App() {
 	};
 	const toggleIngredient = (value: string) => {
 		setSelectedIngredients(prev => prev.includes(value) ? prev.filter(x => x !== value) : [...prev, value]);
+	};
+	const toggleLike = (value: string) => {
+		setSelectedLikes(prev => prev.includes(value) ? prev.filter(x => x !== value) : [...prev, value]);
 	};
 	if (!authStatus) {
 		return (
@@ -354,6 +367,30 @@ function App() {
 						</div>
 						{selectedIngredients.length > 0 && (
 							<button onClick={()=>setSelectedIngredients([])} className="self-start text-xs text-muted-foreground hover:text-foreground underline">Clear ingredients</button>
+						)}
+						<div className="border-t border-border/70 my-4" />
+						<div className="flex items-center justify-between">
+							<Label className="text-xs uppercase font-semibold tracking-wide text-black dark:text-muted-foreground">Like Filter</Label>
+							<div className="flex gap-1 rounded border overflow-hidden">
+								{(['AND','OR'] as const).map(m => (
+									<button key={m} onClick={()=>setLikeMode(m)} className={`px-2 py-1 text-[11px] font-medium ${likeMode===m?'bg-accent text-accent-foreground':'text-muted-foreground hover:bg-accent/40'}`}>{m}</button>
+								))}
+							</div>
+						</div>
+						<div className="flex flex-wrap gap-1">
+							{allLikes.map(name => {
+								const selected = selectedLikes.includes(name);
+								const style = computePillStyle(name, selected, theme);
+								return (
+									<button key={name} onClick={()=>toggleLike(name)} style={style} className={`text-[11px] px-2.5 py-0.5 rounded-full border leading-none transition-colors ${selected?'ring-1 ring-border':''}`}>{name}</button>
+								);
+							})}
+							{!allLikes.length && (
+								<p className="text-xs text-muted-foreground">No likes yet</p>
+							)}
+						</div>
+						{selectedLikes.length > 0 && (
+							<button onClick={()=>setSelectedLikes([])} className="self-start text-xs text-muted-foreground hover:text-foreground underline">Clear likes</button>
 						)}
 					</aside>
 				</main>
