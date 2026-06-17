@@ -115,6 +115,47 @@ test('recipe create rejects thumbnail-only photo payloads', async () => {
 	await expect(res.json()).resolves.toEqual({ error: 'photoThumbnailDataUrl requires supplied photoDataUrl' });
 });
 
+test('recipe tags are returned alphabetically from recipe endpoints', async () => {
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Sorted Tag Recipe',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: '',
+			tags: ['zucchini', 'Breakfast', 'apple']
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const { id } = (await createRes.json()) as { id: number };
+
+	const addTagRes = await callApi(`/api/recipes/${id}/tags`, {
+		method: 'POST',
+		body: JSON.stringify({ name: 'Dinner' })
+	});
+	expect(addTagRes.status).toBe(200);
+
+	const expectedTags = ['apple', 'Breakfast', 'Dinner', 'zucchini'];
+
+	const listRes = await callApi('/api/recipes?cookbookId=1');
+	expect(listRes.status).toBe(200);
+	const listPayload = (await listRes.json()) as Array<{ id: number; tags: string[] }>;
+	expect(listPayload.find((recipe) => recipe.id === id)?.tags).toEqual(expectedTags);
+
+	const searchRes = await callApi('/api/recipes/search?cookbookId=1&q=Sorted');
+	expect(searchRes.status).toBe(200);
+	const searchPayload = (await searchRes.json()) as Array<{ id: number; tags: string[] }>;
+	expect(searchPayload.find((recipe) => recipe.id === id)?.tags).toEqual(expectedTags);
+
+	const detailRes = await callApi(`/api/recipes/${id}`);
+	expect(detailRes.status).toBe(200);
+	const detailPayload = (await detailRes.json()) as { tags: string[] };
+	expect(detailPayload.tags).toEqual(expectedTags);
+});
+
 test('recipe photo endpoints reject unsafe MIME types and do not echo legacy unsafe types', async () => {
 	const parameterizedCreate = await callApi('/api/recipes', {
 		method: 'POST',
