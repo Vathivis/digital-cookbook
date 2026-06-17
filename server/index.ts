@@ -915,7 +915,8 @@ const fetchTags = (ids: number[]) => {
 	const rows = allStatement<{ recipeId: number; name: string }>(
 		`SELECT rt.recipe_id as recipeId, t.name as name
 		 FROM recipe_tags rt JOIN tags t ON t.id = rt.tag_id
-		 WHERE rt.recipe_id IN (${placeholders})`,
+		 WHERE rt.recipe_id IN (${placeholders})
+		 ORDER BY rt.recipe_id ASC, t.name COLLATE NOCASE ASC, t.name ASC`,
 		...ids
 	);
 	return mapRows(rows);
@@ -1166,7 +1167,10 @@ export const app = new Elysia({
 		);
 		const noteRow = getStatement<{ content: string }>('SELECT content FROM notes WHERE recipe_id=?', id);
 		const tags = allStatement<{ name: string }>(
-			'SELECT t.name FROM recipe_tags rt JOIN tags t ON t.id = rt.tag_id WHERE rt.recipe_id=?',
+			`SELECT t.name
+			 FROM recipe_tags rt JOIN tags t ON t.id = rt.tag_id
+			 WHERE rt.recipe_id=?
+			 ORDER BY t.name COLLATE NOCASE ASC, t.name ASC`,
 			id
 		).map((row) => row.name);
 		const likes = allStatement<{ name: string }>(
