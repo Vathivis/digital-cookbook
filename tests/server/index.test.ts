@@ -789,6 +789,91 @@ test('ingredients endpoint returns catalogued names without duplicates', async (
 	expect(limitedNames[0]).toBe('Sugar');
 });
 
+test('likes endpoint returns saved names without duplicates', async () => {
+	const first = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Liked Toast',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(first.status).toBe(200);
+	const firstRecipe = (await first.json()) as { id: number };
+
+	const second = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Also Liked',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(second.status).toBe(200);
+	const secondRecipe = (await second.json()) as { id: number };
+
+	for (const [recipeId, name] of [
+		[firstRecipe.id, 'Alex'],
+		[firstRecipe.id, 'Sam'],
+		[secondRecipe.id, 'Alex']
+	] as const) {
+		const like = await callApi(`/api/recipes/${recipeId}/likes`, {
+			method: 'POST',
+			body: JSON.stringify({ name })
+		});
+		expect(like.status).toBe(200);
+	}
+
+	const cookbookRes = await callApi('/api/cookbooks', {
+		method: 'POST',
+		body: JSON.stringify({ name: `Likes ${Date.now()}` })
+	});
+	expect(cookbookRes.status).toBe(200);
+	const cookbook2 = (await cookbookRes.json()) as { id: number };
+
+	const otherRecipeRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: cookbook2.id,
+			title: 'Other Liked',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(otherRecipeRes.status).toBe(200);
+	const otherRecipe = (await otherRecipeRes.json()) as { id: number };
+	const otherLike = await callApi(`/api/recipes/${otherRecipe.id}/likes`, {
+		method: 'POST',
+		body: JSON.stringify({ name: 'Jordan' })
+	});
+	expect(otherLike.status).toBe(200);
+
+	const res = await callApi('/api/likes?cookbookId=1');
+	expect(res.status).toBe(200);
+	const names = (await res.json()) as string[];
+	expect(names).toEqual(['Alex', 'Sam']);
+	expect(names).not.toContain('Jordan');
+
+	const scoped = await callApi(`/api/likes?cookbookId=${cookbook2.id}`);
+	expect(scoped.status).toBe(200);
+	await expect(scoped.json()).resolves.toEqual(['Jordan']);
+
+	const limited = await callApi('/api/likes?cookbookId=1&q=a&limit=1');
+	expect(limited.status).toBe(200);
+	await expect(limited.json()).resolves.toEqual(['Alex']);
+});
+
 test('search finds recipes by ingredient name or line and records ingredient_id', async () => {
 	const createRes = await callApi('/api/recipes', {
 		method: 'POST',

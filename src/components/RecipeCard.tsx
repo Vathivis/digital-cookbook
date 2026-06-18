@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { updateUsesDelta, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, type StructuredIngredient } from '../lib/api';
+import { updateUsesDelta, getRecipe, updateRecipe, addTagToRecipe, removeTagFromRecipe, addLike, removeLike, deleteRecipe, listTags, listIngredients, listLikes, type StructuredIngredient } from '../lib/api';
 import { loadImageDataUrl, selectPhotoThumbnailDataUrl, THUMBNAIL_MAX_DIMENSION } from '../lib/image';
 import { useReorderDrag } from '../hooks/useReorderDrag';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from './ui/select';
@@ -39,6 +39,7 @@ interface RecipeDetail extends RecipeSummary {
 
 type EditableIngredient = BaseIngredient & { _k: string };
 type EditableStep = { _k: string; text: string };
+const EMPTY_LIKE_SUGGESTIONS: string[] = [];
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
@@ -53,6 +54,27 @@ const uniqNames = (list: string[]) => {
 		result.push(name.trim());
 	}
 	return result;
+};
+
+const filterNameSuggestions = (list: string[], query: string) => {
+	const q = query.trim().toLowerCase();
+	const names = uniqNames(list);
+	if (!q) return names.slice(0, 50);
+	return names
+		.filter(name => name.toLowerCase().includes(q))
+		.map(name => {
+			const lower = name.toLowerCase();
+			let score = 0;
+			if (lower === q) score += 100;
+			if (lower.startsWith(q)) score += 50;
+			const idx = lower.indexOf(q);
+			score += Math.max(0, 30 - idx);
+			score -= Math.max(0, lower.length - q.length);
+			return { name, score };
+		})
+		.sort((a, b) => b.score - a.score)
+		.map(entry => entry.name)
+		.slice(0, 50);
 };
 
 const normalizeIngredients = (ingredients?: unknown): BaseIngredient[] => {
@@ -113,9 +135,10 @@ interface RecipeCardProps {
 	recipe: RecipeSummary;
 	onChange: () => void;
 	onUsesChange?: (recipeId: number, uses: number) => void;
+	likeSuggestions?: string[];
 }
 
-export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) {
+export function RecipeCard({ recipe, onChange, onUsesChange, likeSuggestions = EMPTY_LIKE_SUGGESTIONS }: RecipeCardProps) {
 	const [likes, setLikes] = useState<string[]>(uniqNames(recipe.likes || []));
 	const [usesCount, setUsesCount] = useState<number>(recipe.uses ?? 0);
 	const usesCountRef = useRef(recipe.uses ?? 0);
@@ -251,8 +274,14 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 	const photoInputRef = useRef<HTMLInputElement | null>(null);
 	const [quickLikeActive, setQuickLikeActive] = useState(false);
 	const [quickLikeValue, setQuickLikeValue] = useState('');
+	const [filteredQuickLikeNames, setFilteredQuickLikeNames] = useState<string[]>([]);
+	const [quickLikeHighlight, setQuickLikeHighlight] = useState<number>(-1);
+	const [quickLikeSuggestionsNode, setQuickLikeSuggestionsNode] = useState<HTMLElement | null>(null);
 	const [addingLike, setAddingLike] = useState(false);
 	const [likeValue, setLikeValue] = useState('');
+	const [filteredLikeNames, setFilteredLikeNames] = useState<string[]>([]);
+	const [likeHighlight, setLikeHighlight] = useState<number>(-1);
+	const [likeSuggestionsNode, setLikeSuggestionsNode] = useState<HTMLElement | null>(null);
 	const likeInputRef = useRef<HTMLInputElement | null>(null);
 	const quickLikeInputRef = useRef<HTMLInputElement | null>(null);
 	useEffect(() => {
@@ -260,8 +289,79 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 			quickLikeInputRef.current?.focus();
 		} else {
 			setQuickLikeValue('');
+			setFilteredQuickLikeNames([]);
+			setQuickLikeHighlight(-1);
 		}
 	}, [quickLikeActive]);
+	useEffect(() => {
+		if (!quickLikeActive) return;
+		let active = true;
+		const localSuggestions = filterNameSuggestions(likeSuggestions, quickLikeValue);
+		setFilteredQuickLikeNames(localSuggestions);
+		const h = setTimeout(() => {
+			(async () => {
+				try {
+					const names = await listLikes({ cookbookId: recipe.cookbook_id, q: quickLikeValue.trim(), limit: 50 });
+					if (!active) return;
+					setFilteredQuickLikeNames(names);
+				} catch (error) {
+					if (!active) return;
+					setFilteredQuickLikeNames(localSuggestions);
+					console.error('Failed to load like suggestions', error);
+				}
+			})();
+		}, 80);
+		return () => { active = false; clearTimeout(h); };
+	}, [quickLikeActive, quickLikeValue, recipe.cookbook_id, likeSuggestions]);
+	useEffect(() => { setQuickLikeHighlight(-1); }, [filteredQuickLikeNames]);
+	useEffect(() => {
+		if (quickLikeHighlight < 0 || !quickLikeSuggestionsNode) return;
+		const container = quickLikeSuggestionsNode;
+		const el = container.querySelector(`[data-idx="${quickLikeHighlight}"]`) as HTMLElement | null;
+		if (!el) return;
+		const top = el.offsetTop;
+		const bottom = top + el.offsetHeight;
+		if (top < container.scrollTop) container.scrollTop = top;
+		else if (bottom > container.scrollTop + container.clientHeight) container.scrollTop = bottom - container.clientHeight;
+	}, [quickLikeHighlight, quickLikeSuggestionsNode]);
+	useEffect(() => {
+		if (!addingLike) {
+			setLikeValue('');
+			setFilteredLikeNames([]);
+			setLikeHighlight(-1);
+		}
+	}, [addingLike]);
+	useEffect(() => {
+		if (!addingLike) return;
+		let active = true;
+		const localSuggestions = filterNameSuggestions(likeSuggestions, likeValue);
+		setFilteredLikeNames(localSuggestions);
+		const h = setTimeout(() => {
+			(async () => {
+				try {
+					const names = await listLikes({ cookbookId: recipe.cookbook_id, q: likeValue.trim(), limit: 50 });
+					if (!active) return;
+					setFilteredLikeNames(names);
+				} catch (error) {
+					if (!active) return;
+					setFilteredLikeNames(localSuggestions);
+					console.error('Failed to load like suggestions', error);
+				}
+			})();
+		}, 80);
+		return () => { active = false; clearTimeout(h); };
+	}, [addingLike, likeValue, recipe.cookbook_id, likeSuggestions]);
+	useEffect(() => { setLikeHighlight(-1); }, [filteredLikeNames]);
+	useEffect(() => {
+		if (likeHighlight < 0 || !likeSuggestionsNode) return;
+		const container = likeSuggestionsNode;
+		const el = container.querySelector(`[data-idx="${likeHighlight}"]`) as HTMLElement | null;
+		if (!el) return;
+		const top = el.offsetTop;
+		const bottom = top + el.offsetHeight;
+		if (top < container.scrollTop) container.scrollTop = top;
+		else if (bottom > container.scrollTop + container.clientHeight) container.scrollTop = bottom - container.clientHeight;
+	}, [likeHighlight, likeSuggestionsNode]);
 	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
 	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
 	const [ingredientAnchor, setIngredientAnchor] = useState<HTMLInputElement | null>(null);
@@ -509,9 +609,9 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 		},
 		[fetchAndApplyDetail, full, likes, onChange, pullLike, pushLike, recipe.id]
 	);
-	const addLikeInline = async () => {
-		if (!full || !likeValue.trim()) return;
-		const name = likeValue.trim();
+	const addLikeInline = async (nameOverride?: string) => {
+		const name = (nameOverride ?? likeValue).trim();
+		if (!full || !name) return;
 		setLikeValue('');
 		setAddingLike(false);
 		await persistLike(name, full.id);
@@ -537,6 +637,37 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 	const cancelQuickLike = () => {
 		setQuickLikeActive(false);
 		setQuickLikeValue('');
+	};
+	const onKeyDownQuickLike = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelQuickLike();
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			setQuickLikeHighlight(h => Math.min(filteredQuickLikeNames.length - 1, h + 1));
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			setQuickLikeHighlight(h => Math.max(-1, h - 1));
+		} else if (e.key === 'Enter' && quickLikeHighlight >= 0 && filteredQuickLikeNames[quickLikeHighlight]) {
+			e.preventDefault();
+			void handleQuickLikeSubmit(filteredQuickLikeNames[quickLikeHighlight]);
+		}
+	};
+	const onKeyDownLike = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			setLikeValue('');
+			setAddingLike(false);
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			setLikeHighlight(h => Math.min(filteredLikeNames.length - 1, h + 1));
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			setLikeHighlight(h => Math.max(-1, h - 1));
+		} else if (e.key === 'Enter' && likeHighlight >= 0 && filteredLikeNames[likeHighlight]) {
+			e.preventDefault();
+			void addLikeInline(filteredLikeNames[likeHighlight]);
+		}
 	};
 	const onPickImage = useCallback((file?: File) => {
 		if (!file) return;
@@ -810,12 +941,9 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 								<Input
 									ref={quickLikeInputRef}
 									name="name"
-									onKeyDown={(e) => {
-										if (e.key === 'Escape') {
-											e.preventDefault();
-											cancelQuickLike();
-										}
-									}}
+									value={quickLikeValue}
+									onChange={(e) => setQuickLikeValue(e.target.value)}
+									onKeyDown={onKeyDownQuickLike}
 									placeholder="Name who likes this"
 									className="h-7 flex-1 min-w-0 text-[11px] px-2"
 								/>
@@ -834,6 +962,19 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 								>
 									Cancel
 								</Button>
+								{quickLikeInputRef.current && (filteredQuickLikeNames.length > 0 || quickLikeValue.trim()) && createPortal(
+									<TagSuggestions
+										anchor={quickLikeInputRef.current}
+										items={filteredQuickLikeNames}
+										highlight={quickLikeHighlight}
+										onHighlight={setQuickLikeHighlight}
+										existing={likes}
+										onPick={(name) => { void handleQuickLikeSubmit(name); }}
+										query={quickLikeValue.trim()}
+										allTags={filteredQuickLikeNames}
+										onContainerChange={setQuickLikeSuggestionsNode}
+									/>, document.body
+								)}
 							</form>
 						) : (
 							<button
@@ -1211,16 +1352,24 @@ export function RecipeCard({ recipe, onChange, onUsesChange }: RecipeCardProps) 
 													autoFocus
 													value={likeValue}
 													onChange={e => setLikeValue(e.target.value)}
-													onKeyDown={e => {
-														if (e.key === 'Escape') {
-															setLikeValue('');
-															setAddingLike(false);
-														}
-													}}
+													onKeyDown={onKeyDownLike}
 													placeholder="Name who likes this"
 													className="h-7 text-xs px-2 w-44"
 												/>
 												<Button type="submit" className="h-7 px-3 text-xs" disabled={!likeValue.trim()}>Add</Button>
+												{likeInputRef.current && (filteredLikeNames.length > 0 || likeValue.trim()) && createPortal(
+													<TagSuggestions
+														anchor={likeInputRef.current}
+														items={filteredLikeNames}
+														highlight={likeHighlight}
+														onHighlight={setLikeHighlight}
+														existing={likes}
+														onPick={(name) => { void addLikeInline(name); }}
+														query={likeValue.trim()}
+														allTags={filteredLikeNames}
+														onContainerChange={setLikeSuggestionsNode}
+													/>, document.body
+												)}
 											</form>
 										) : (
 											<button

@@ -300,7 +300,7 @@ function App() {
 				<main className="flex flex-1 overflow-hidden">
 					<div className="flex-1 p-6 overflow-auto">
 						{activeCookbook && (
-							<AnimatedRecipeGrid recipes={filtered} onChange={reload} onUsesChange={updateRecipeUses} cookbookId={activeCookbook} />
+							<AnimatedRecipeGrid recipes={filtered} onChange={reload} onUsesChange={updateRecipeUses} cookbookId={activeCookbook} likeSuggestions={allLikes} />
 						)}
 					</div>
 					<aside className="w-72 border-l border-border p-4 flex flex-col gap-4 bg-sidebar/60 backdrop-blur supports-[backdrop-filter]:bg-sidebar/40 overflow-y-auto">
@@ -403,12 +403,14 @@ function AnimatedRecipeGrid({
 	recipes,
 	onChange,
 	onUsesChange,
-	cookbookId
+	cookbookId,
+	likeSuggestions
 }: {
 	recipes: Recipe[];
 	onChange: () => Promise<void> | void;
 	onUsesChange: (recipeId: number, uses: number) => void;
 	cookbookId: number;
+	likeSuggestions: string[];
 }) {
 	const EXIT_MS = 300;
 	const items = useAnimatedItems(recipes, EXIT_MS);
@@ -433,7 +435,7 @@ function AnimatedRecipeGrid({
 						className={common + ' surface-transition'}
 						style={style}
 					>
-						<RecipeCard recipe={it.recipe} onChange={() => { void onChange(); }} onUsesChange={onUsesChange} />
+						<RecipeCard recipe={it.recipe} onChange={() => { void onChange(); }} onUsesChange={onUsesChange} likeSuggestions={likeSuggestions} />
 					</div>
 				);
 			})}

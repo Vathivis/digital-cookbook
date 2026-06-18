@@ -226,3 +226,12 @@ export async function listIngredients(options?: { cookbookId?: number; q?: strin
 	const suffix = params.toString();
 	return requestJson<string[]>(`${base}/ingredients${suffix ? `?${suffix}` : ''}`);
 }
+
+export async function listLikes(options?: { cookbookId?: number; q?: string; limit?: number }): Promise<string[]> {
+	const params = new URLSearchParams();
+	if (options?.cookbookId != null) params.set('cookbookId', String(options.cookbookId));
+	if (options?.q != null) params.set('q', options.q);
+	if (options?.limit != null) params.set('limit', String(options.limit));
+	const suffix = params.toString();
+	return requestJson<string[]>(`${base}/likes${suffix ? `?${suffix}` : ''}`);
+}

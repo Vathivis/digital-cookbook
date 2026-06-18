@@ -86,11 +86,12 @@ const cookbookMutationSchema = z.object({ name: nonEmptyString.max(255) });
 const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const cookbookQuerySchema = z.object({ cookbookId: z.coerce.number().int().positive() });
 const recipeSearchSchema = cookbookQuerySchema.extend({ q: z.string().optional() });
-const ingredientsQuerySchema = z.object({
+const nameSuggestionsQuerySchema = z.object({
 	cookbookId: z.coerce.number().int().positive().optional(),
 	q: z.string().optional(),
 	limit: z.coerce.number().int().positive().max(5000).optional()
 });
+const ingredientsQuerySchema = nameSuggestionsQuerySchema;
 const nameSchema = z.object({ name: nonEmptyString.max(255) });
 const usesDeltaSchema = z.object({ delta: z.number().int().min(-1000).max(1000) }).strict();
 const loginSchema = z
@@ -532,7 +533,7 @@ type AuthSession = {
 	username?: string;
 };
 
-const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/ingredients'];
+const protectedPrefixes = ['/api/cookbooks', '/api/recipes', '/api/tags', '/api/ingredients', '/api/likes'];
 
 const isProtectedApiPath = (pathname: string) =>
 	protectedPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -1490,6 +1491,73 @@ export const app = new Elysia({
 		} catch {
 			set.status = 500;
 			return { error: 'failed to fetch ingredients' };
+		}
+	})
+	.get('/api/likes', ({ query, set }) => {
+		const parsed = nameSuggestionsQuerySchema.safeParse(query);
+		if (!parsed.success) return validationError(set, parsed.error);
+
+		try {
+			const { cookbookId, limit } = parsed.data;
+			const rawTerm = (parsed.data.q ?? '').trim().toLowerCase();
+			const hasTerm = rawTerm.length > 0;
+			const escapedTerm = rawTerm.replace(/[%_]/g, '\\$&');
+			const likeTerm = `%${escapedTerm}%`;
+			const prefixTerm = `${escapedTerm}%`;
+
+			const whereParts: string[] = [];
+			const params: (string | number)[] = [];
+
+			let joinClause = '';
+			if (cookbookId != null) {
+				joinClause = 'JOIN recipes r ON r.id = rl.recipe_id';
+				whereParts.push('r.cookbook_id = ?');
+				params.push(cookbookId);
+			}
+
+			if (hasTerm) {
+				whereParts.push(`LOWER(rl.name) LIKE ? ESCAPE '\\'`);
+				params.push(likeTerm);
+			}
+
+			const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+			const limitClause = limit != null ? 'LIMIT ?' : '';
+
+			const orderClause = hasTerm
+				? `
+					ORDER BY
+						CASE
+							WHEN LOWER(rl.name) = ? THEN 0
+							WHEN LOWER(rl.name) LIKE ? ESCAPE '\\' THEN 1
+							ELSE 2
+						END,
+						LENGTH(rl.name) ASC,
+						rl.name COLLATE NOCASE ASC
+				`
+				: 'ORDER BY rl.name COLLATE NOCASE ASC';
+
+			if (hasTerm) {
+				params.push(rawTerm, prefixTerm);
+			}
+			if (limit != null) {
+				params.push(limit);
+			}
+
+			const rows = allStatement<{ name: string }>(
+				`
+				SELECT DISTINCT rl.name as name
+				FROM recipe_likes rl
+				${joinClause}
+				${whereClause}
+				${orderClause}
+				${limitClause}
+				`,
+				...params
+			);
+			return rows.map((r) => r.name);
+		} catch {
+			set.status = 500;
+			return { error: 'failed to fetch likes' };
 		}
 	});
 
