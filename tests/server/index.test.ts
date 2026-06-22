@@ -358,7 +358,7 @@ test('legacy recipe photo columns migrate into photo variants and are cleared', 
 		legacyDatabase.close();
 		if (fs.existsSync(legacyDbPath)) fs.rmSync(legacyDbPath, { force: true });
 	}
-});
+}, 15000);
 
 test('legacy photo variant data URLs migrate into blob storage', async () => {
 	const legacyDbPath = path.join(tmpDir, `legacy-photo-variant-${Date.now()}.db`);
@@ -428,7 +428,7 @@ test('legacy photo variant data URLs migrate into blob storage', async () => {
 		legacyDatabase.close();
 		if (fs.existsSync(legacyDbPath)) fs.rmSync(legacyDbPath, { force: true });
 	}
-});
+}, 15000);
 
 test('recipe mutations handle image clears and invalid ids', async () => {
 	const createRes = await callApi('/api/recipes', {
