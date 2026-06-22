@@ -18,7 +18,21 @@ jobs:
         startsWith(github.event.head_commit.message || '', 'chore(release): bump version to v') &&
         contains(github.event.head_commit.message || '', '[skip ci]')
       )
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'workflow_dispatch' &&
+            github.actor == 'Vathivis'
+          ) ||
+          (
+            github.event_name == 'pull_request' &&
+            github.actor == 'Vathivis' &&
+            github.event.pull_request.user.login == 'Vathivis'
+          )
+        ) && 'cookbook-trusted' || 'ubuntu-latest'
+      }}
     timeout-minutes: 20
     steps:
       - name: Check out repository
@@ -50,9 +64,12 @@ jobs:
       github.ref == 'refs/heads/main' &&
       (
         github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch'
+        (
+          github.event_name == 'workflow_dispatch' &&
+          github.actor == 'Vathivis'
+        )
       )
-    runs-on: ubuntu-latest
+    runs-on: cookbook-trusted
     timeout-minutes: 45
     permissions:
       contents: write
