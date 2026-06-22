@@ -40,6 +40,7 @@ const json = (body: unknown, status = 200) =>
 afterEach(() => {
 	cleanup();
 	mock.restore();
+	globalWindow.history.replaceState(null, '', 'about:blank');
 	localStorage.clear();
 });
 
