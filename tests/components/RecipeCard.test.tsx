@@ -17,6 +17,7 @@ Object.assign(globalThis, {
 	HTMLButtonElement: globalWindow.HTMLButtonElement,
 	HTMLFormElement: globalWindow.HTMLFormElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
+	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	Node: globalWindow.Node,
 	Event: globalWindow.Event,
 	InputEvent: globalWindow.InputEvent,

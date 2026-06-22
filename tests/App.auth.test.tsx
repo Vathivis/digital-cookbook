@@ -16,6 +16,7 @@ Object.assign(globalThis, {
 	HTMLElement: globalWindow.HTMLElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
 	DocumentFragment: globalWindow.DocumentFragment,
+	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	localStorage: globalWindow.localStorage,
 	Node: globalWindow.Node,
 });

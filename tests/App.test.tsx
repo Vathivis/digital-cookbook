@@ -17,6 +17,7 @@ Object.assign(globalThis, {
 	navigator: globalWindow.navigator,
 	HTMLElement: globalWindow.HTMLElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
+	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	Node: globalWindow.Node,
 });
 
