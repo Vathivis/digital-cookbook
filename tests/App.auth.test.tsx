@@ -1,46 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { Window as HappyWindow } from 'happy-dom';
 import App from '@/App';
 import { AUTH_EXPIRED_EVENT } from '@/lib/api';
-
-const happyWindow = new HappyWindow();
-const globalWindow = happyWindow as unknown as Window & typeof globalThis;
-globalWindow.Error = Error;
-globalWindow.SyntaxError = SyntaxError;
-globalWindow.TypeError = TypeError;
-Object.assign(globalThis, {
-	window: globalWindow,
-	document: globalWindow.document,
-	navigator: globalWindow.navigator,
-	Element: globalWindow.Element,
-	HTMLElement: globalWindow.HTMLElement,
-	HTMLButtonElement: globalWindow.HTMLButtonElement,
-	HTMLInputElement: globalWindow.HTMLInputElement,
-	SVGElement: globalWindow.SVGElement,
-	DocumentFragment: globalWindow.DocumentFragment,
-	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
-	localStorage: globalWindow.localStorage,
-	Node: globalWindow.Node,
-	NodeFilter: globalWindow.NodeFilter,
-	Event: globalWindow.Event,
-	CustomEvent: globalWindow.CustomEvent,
-	InputEvent: globalWindow.InputEvent,
-	KeyboardEvent: globalWindow.KeyboardEvent,
-	MouseEvent: globalWindow.MouseEvent,
-	PointerEvent: globalWindow.PointerEvent,
-});
-
-if (!globalThis.MutationObserver) {
-	class MutationObserverStub {
-		observe() {}
-		disconnect() {}
-		takeRecords() {
-			return [];
-		}
-	}
-	globalThis.MutationObserver = MutationObserverStub as unknown as typeof MutationObserver;
-}
 
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {
@@ -48,33 +9,10 @@ const json = (body: unknown, status = 200) =>
 		headers: { 'Content-Type': 'application/json' }
 	});
 
-class ResizeObserverStub {
-	observe() {}
-	unobserve() {}
-	disconnect() {}
-}
-
-const requestAnimationFrameStub = (callback: FrameRequestCallback) => {
-	return setTimeout(() => callback(Date.now()), 0) as unknown as number;
-};
-const cancelAnimationFrameStub = (id: number) => {
-	clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
-};
-
-Object.assign(globalThis, {
-	ResizeObserver: ResizeObserverStub,
-	requestAnimationFrame: requestAnimationFrameStub,
-	cancelAnimationFrame: cancelAnimationFrameStub,
-});
-Object.assign(globalWindow, {
-	requestAnimationFrame: requestAnimationFrameStub,
-	cancelAnimationFrame: cancelAnimationFrameStub,
-});
-
 afterEach(() => {
 	cleanup();
 	mock.restore();
-	globalWindow.history.replaceState(null, '', 'about:blank');
+	window.history.replaceState(null, '', 'about:blank');
 	localStorage.clear();
 });
 
@@ -239,7 +177,7 @@ describe('App auth gating', () => {
 		});
 
 		act(() => {
-			window.dispatchEvent(new globalWindow.CustomEvent(AUTH_EXPIRED_EVENT));
+			window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
 		});
 
 		await waitFor(() => {
@@ -332,13 +270,14 @@ describe('App auth gating', () => {
 			await waitFor(() => {
 				expect(getByRole('button', { name: 'Random matching recipe' })).toBeTruthy();
 			});
+			const randomButton = getByRole('button', { name: 'Random matching recipe' });
 
 			fireEvent.click(getAllByRole('button', { name: 'Cheap' })[0]);
 			fireEvent.click(getAllByRole('button', { name: 'Dinner' })[0]);
 			fireEvent.click(getAllByRole('button', { name: 'OR' })[1]);
 			fireEvent.click(getAllByRole('button', { name: 'Egg' })[0]);
 			fireEvent.click(getAllByRole('button', { name: 'Honey' })[0]);
-			fireEvent.click(getByRole('button', { name: 'Random matching recipe' }));
+			fireEvent.click(randomButton);
 
 			await waitFor(() => {
 				const detailCalls = fetchMock.mock.calls
@@ -346,7 +285,7 @@ describe('App auth gating', () => {
 					.filter(url => url.endsWith('/api/recipes/4'));
 				expect(detailCalls).toHaveLength(1);
 			});
-			fireEvent.click(getByRole('button', { name: 'Random matching recipe' }));
+			fireEvent.click(randomButton);
 			await waitFor(() => {
 				const detailCalls = fetchMock.mock.calls
 					.map(([input]) => typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
@@ -419,8 +358,8 @@ describe('App auth gating', () => {
 			const vegetarianFilter = getAllByRole('button', { name: 'Vegetarian' })[0];
 
 			await act(async () => {
-				randomButton.dispatchEvent(new globalWindow.MouseEvent('click', { bubbles: true }));
-				vegetarianFilter.dispatchEvent(new globalWindow.MouseEvent('click', { bubbles: true }));
+				randomButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+				vegetarianFilter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 			});
 
 			await waitFor(() => {

@@ -1,39 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { Window as HappyWindow } from 'happy-dom';
 import { CookbookLayoutSidebar } from '@/components/CookbookLayout';
-
-const happyWindow = new HappyWindow();
-const globalWindow = happyWindow as unknown as Window & typeof globalThis;
-globalWindow.Error = Error;
-globalWindow.SyntaxError = SyntaxError;
-globalWindow.TypeError = TypeError;
-Object.assign(globalThis, {
-	window: globalWindow,
-	document: globalWindow.document,
-	navigator: globalWindow.navigator,
-	HTMLElement: globalWindow.HTMLElement,
-	HTMLButtonElement: globalWindow.HTMLButtonElement,
-	HTMLFormElement: globalWindow.HTMLFormElement,
-	HTMLInputElement: globalWindow.HTMLInputElement,
-	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
-	Node: globalWindow.Node,
-	Event: globalWindow.Event,
-	InputEvent: globalWindow.InputEvent,
-	MouseEvent: globalWindow.MouseEvent,
-	FormData: globalWindow.FormData,
-});
-
-if (!globalThis.MutationObserver) {
-	class MutationObserverStub {
-		observe() {}
-		disconnect() {}
-		takeRecords() {
-			return [];
-		}
-	}
-	globalThis.MutationObserver = MutationObserverStub as unknown as typeof MutationObserver;
-}
 
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {
