@@ -22,6 +22,7 @@ Object.assign(globalThis, {
 	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	localStorage: globalWindow.localStorage,
 	Node: globalWindow.Node,
+	NodeFilter: globalWindow.NodeFilter,
 	Event: globalWindow.Event,
 	CustomEvent: globalWindow.CustomEvent,
 	InputEvent: globalWindow.InputEvent,

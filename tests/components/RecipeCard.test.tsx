@@ -22,6 +22,7 @@ Object.assign(globalThis, {
 	DocumentFragment: globalWindow.DocumentFragment,
 	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	Node: globalWindow.Node,
+	NodeFilter: globalWindow.NodeFilter,
 	Event: globalWindow.Event,
 	CustomEvent: globalWindow.CustomEvent,
 	InputEvent: globalWindow.InputEvent,
