@@ -136,9 +136,18 @@ interface RecipeCardProps {
 	onChange: () => void;
 	onUsesChange?: (recipeId: number, uses: number) => void;
 	likeSuggestions?: string[];
+	autoOpenRequestId?: number;
+	onAutoOpenHandled?: () => void;
 }
 
-export function RecipeCard({ recipe, onChange, onUsesChange, likeSuggestions = EMPTY_LIKE_SUGGESTIONS }: RecipeCardProps) {
+export function RecipeCard({
+	recipe,
+	onChange,
+	onUsesChange,
+	likeSuggestions = EMPTY_LIKE_SUGGESTIONS,
+	autoOpenRequestId,
+	onAutoOpenHandled
+}: RecipeCardProps) {
 	const [likes, setLikes] = useState<string[]>(uniqNames(recipe.likes || []));
 	const [usesCount, setUsesCount] = useState<number>(recipe.uses ?? 0);
 	const usesCountRef = useRef(recipe.uses ?? 0);
@@ -147,6 +156,7 @@ export function RecipeCard({ recipe, onChange, onUsesChange, likeSuggestions = E
 	const usesFlushInFlightRef = useRef(false);
 	const mountedRef = useRef(true);
 	const recipeIdRef = useRef(recipe.id);
+	const lastAutoOpenRequestRef = useRef<number | undefined>(undefined);
 	const [open, setOpen] = useState(false);
 	const [full, setFull] = useState<RecipeDetail | null>(null);
 	const [editing, setEditing] = useState(false);
@@ -517,7 +527,7 @@ export function RecipeCard({ recipe, onChange, onUsesChange, likeSuggestions = E
 		if (usesCountRef.current <= 0) return;
 		queueUsesDelta(-1);
 	};
-	const openDialog = async () => {
+	const openDialog = useCallback(async () => {
 		setOpen(true);
 		try {
 			const detail = await fetchAndApplyDetail(recipe, recipe.id);
@@ -529,7 +539,13 @@ export function RecipeCard({ recipe, onChange, onUsesChange, likeSuggestions = E
 			console.error('Failed to load recipe details', error);
 			setFull(null);
 		}
-	};
+	}, [fetchAndApplyDetail, recipe, setPhoto, setPhotoThumbnail]);
+	useLayoutEffect(() => {
+		if (autoOpenRequestId == null || lastAutoOpenRequestRef.current === autoOpenRequestId) return;
+		lastAutoOpenRequestRef.current = autoOpenRequestId;
+		void openDialog();
+		onAutoOpenHandled?.();
+	}, [autoOpenRequestId, onAutoOpenHandled, openDialog]);
 	const startEdit = () => {
 		if (!full) return;
 		setETitle(full.title || '');

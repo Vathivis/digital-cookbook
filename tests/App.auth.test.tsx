@@ -1,36 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
-import { Window as HappyWindow } from 'happy-dom';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import App from '@/App';
 import { AUTH_EXPIRED_EVENT } from '@/lib/api';
-
-const happyWindow = new HappyWindow();
-const globalWindow = happyWindow as unknown as Window & typeof globalThis;
-globalWindow.Error = Error;
-globalWindow.SyntaxError = SyntaxError;
-globalWindow.TypeError = TypeError;
-Object.assign(globalThis, {
-	window: globalWindow,
-	document: globalWindow.document,
-	navigator: globalWindow.navigator,
-	HTMLElement: globalWindow.HTMLElement,
-	HTMLInputElement: globalWindow.HTMLInputElement,
-	DocumentFragment: globalWindow.DocumentFragment,
-	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
-	localStorage: globalWindow.localStorage,
-	Node: globalWindow.Node,
-});
-
-if (!globalThis.MutationObserver) {
-	class MutationObserverStub {
-		observe() {}
-		disconnect() {}
-		takeRecords() {
-			return [];
-		}
-	}
-	globalThis.MutationObserver = MutationObserverStub as unknown as typeof MutationObserver;
-}
 
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {
@@ -41,7 +12,7 @@ const json = (body: unknown, status = 200) =>
 afterEach(() => {
 	cleanup();
 	mock.restore();
-	globalWindow.history.replaceState(null, '', 'about:blank');
+	window.history.replaceState(null, '', 'about:blank');
 	localStorage.clear();
 });
 
@@ -206,11 +177,261 @@ describe('App auth gating', () => {
 		});
 
 		act(() => {
-			window.dispatchEvent(new globalWindow.CustomEvent(AUTH_EXPIRED_EVENT));
+			window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
 		});
 
 		await waitFor(() => {
 			expect(getByRole('heading', { name: 'Sign in' })).toBeTruthy();
+		});
+	});
+
+	test('opens a random recipe from the currently filtered matches', async () => {
+		const recipes = [
+			{
+				id: 1,
+				cookbook_id: 1,
+				title: 'Cheap Egg Bake',
+				description: 'Uses eggs',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap', 'Dinner'],
+				likes: [],
+				ingredientNames: ['Egg'],
+			},
+			{
+				id: 2,
+				cookbook_id: 1,
+				title: 'Cheap Rice Dinner',
+				description: 'Uses rice',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap', 'Dinner'],
+				likes: [],
+				ingredientNames: ['Rice'],
+			},
+			{
+				id: 3,
+				cookbook_id: 1,
+				title: 'Budget Tomato Lunch',
+				description: 'Uses tomatoes',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap', 'Lunch'],
+				likes: [],
+				ingredientNames: ['Tomatoes'],
+			},
+			{
+				id: 4,
+				cookbook_id: 1,
+				title: 'Honey Feta Roast',
+				description: 'Uses honey',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap', 'Dinner'],
+				likes: [],
+				ingredientNames: ['Honey'],
+			},
+		];
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/auth/status')) return Promise.resolve(json({ enabled: false, authenticated: true }));
+			if (url.endsWith('/api/cookbooks')) return Promise.resolve(json([{ id: 1, name: 'Main' }]));
+			if (url.includes('/api/recipes?cookbookId=1')) return Promise.resolve(json(recipes));
+			if (url.endsWith('/api/recipes/4')) {
+				return Promise.resolve(json({
+					...recipes[3],
+					title: 'Honey Feta Roast Detail',
+					ingredients: [],
+					steps: ['Roast until browned'],
+					notes: '',
+				}));
+			}
+			return Promise.resolve(json({ error: 'not found' }, 404));
+		});
+		const originalRandom = Math.random;
+		Math.random = mock(() => 0.75) as unknown as typeof Math.random;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getAllByRole, getByRole } = render(<App />);
+
+			await waitFor(() => {
+				expect(getByRole('button', { name: 'Random matching recipe' })).toBeTruthy();
+			});
+			const randomButton = getByRole('button', { name: 'Random matching recipe' });
+
+			fireEvent.click(getAllByRole('button', { name: 'Cheap' })[0]);
+			fireEvent.click(getAllByRole('button', { name: 'Dinner' })[0]);
+			fireEvent.click(getAllByRole('button', { name: 'OR' })[1]);
+			fireEvent.click(getAllByRole('button', { name: 'Egg' })[0]);
+			fireEvent.click(getAllByRole('button', { name: 'Honey' })[0]);
+			fireEvent.click(randomButton);
+
+			await waitFor(() => {
+				const detailCalls = fetchMock.mock.calls
+					.map(([input]) => typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
+					.filter(url => url.endsWith('/api/recipes/4'));
+				expect(detailCalls).toHaveLength(1);
+			});
+			fireEvent.click(randomButton);
+			await waitFor(() => {
+				const detailCalls = fetchMock.mock.calls
+					.map(([input]) => typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
+					.filter(url => url.endsWith('/api/recipes/4'));
+				expect(detailCalls).toHaveLength(2);
+			});
+		} finally {
+			Math.random = originalRandom;
+		}
+	});
+
+	test('does not reopen a stale random request after the selected recipe leaves the filters', async () => {
+		const recipes = [
+			{
+				id: 1,
+				cookbook_id: 1,
+				title: 'Cheap Egg Bake',
+				description: 'Uses eggs',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap'],
+				likes: [],
+				ingredientNames: ['Egg'],
+			},
+			{
+				id: 2,
+				cookbook_id: 1,
+				title: 'Vegetarian Plate',
+				description: 'Simple plate',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Vegetarian'],
+				likes: [],
+				ingredientNames: ['Carrot'],
+			},
+		];
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/auth/status')) return Promise.resolve(json({ enabled: false, authenticated: true }));
+			if (url.endsWith('/api/cookbooks')) return Promise.resolve(json([{ id: 1, name: 'Main' }]));
+			if (url.includes('/api/recipes?cookbookId=1')) return Promise.resolve(json(recipes));
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...recipes[0],
+					ingredients: [],
+					steps: ['Bake until set'],
+					notes: '',
+				}));
+			}
+			return Promise.resolve(json({ error: 'not found' }, 404));
+		});
+		const originalRandom = Math.random;
+		Math.random = mock(() => 0) as unknown as typeof Math.random;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getAllByRole, getByRole, queryByRole } = render(<App />);
+
+			await waitFor(() => {
+				expect(getByRole('button', { name: 'Random matching recipe' })).toBeTruthy();
+			});
+
+			const randomButton = getByRole('button', { name: 'Random matching recipe' });
+			const vegetarianFilter = getAllByRole('button', { name: 'Vegetarian' })[0];
+
+			await act(async () => {
+				randomButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+				vegetarianFilter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+			});
+
+			await waitFor(() => {
+				expect(queryByRole('heading', { name: 'Cheap Egg Bake' })).toBeNull();
+			});
+
+			fireEvent.click(getAllByRole('button', { name: 'Vegetarian' })[0]);
+
+			await waitFor(() => {
+				expect(getByRole('heading', { name: 'Cheap Egg Bake' })).toBeTruthy();
+			});
+
+			const detailCalls = fetchMock.mock.calls
+				.map(([input]) => typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
+				.filter(url => url.endsWith('/api/recipes/1'));
+			expect(detailCalls).toHaveLength(0);
+		} finally {
+			Math.random = originalRandom;
+		}
+	});
+
+	test('disables the random recipe button when filters leave no matches', async () => {
+		const recipes = [
+			{
+				id: 1,
+				cookbook_id: 1,
+				title: 'Cheap Soup',
+				description: 'Simple soup',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Cheap'],
+				likes: [],
+				ingredientNames: ['Onion'],
+			},
+			{
+				id: 2,
+				cookbook_id: 1,
+				title: 'Vegetarian Plate',
+				description: 'Simple plate',
+				author: 'Chef',
+				photo: null,
+				uses: 0,
+				servings: 1,
+				created_at: '2024-01-01',
+				tags: ['Vegetarian'],
+				likes: [],
+				ingredientNames: ['Carrot'],
+			},
+		];
+		globalThis.fetch = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/auth/status')) return Promise.resolve(json({ enabled: false, authenticated: true }));
+			if (url.endsWith('/api/cookbooks')) return Promise.resolve(json([{ id: 1, name: 'Main' }]));
+			if (url.includes('/api/recipes?cookbookId=1')) return Promise.resolve(json(recipes));
+			return Promise.resolve(json({ error: 'not found' }, 404));
+		}) as typeof fetch;
+
+		const { getAllByRole, getByRole } = render(<App />);
+
+		await waitFor(() => {
+			expect(getByRole('button', { name: 'Random matching recipe' })).toBeTruthy();
+		});
+
+		fireEvent.click(getAllByRole('button', { name: 'Cheap' })[0]);
+		fireEvent.click(getAllByRole('button', { name: 'Vegetarian' })[0]);
+
+		await waitFor(() => {
+			const button = getByRole('button', { name: 'No matching recipes' }) as HTMLButtonElement;
+			expect(button.disabled).toBe(true);
 		});
 	});
 });

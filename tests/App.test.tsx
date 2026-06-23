@@ -1,25 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { render, waitFor, cleanup } from '@testing-library/react';
 import { useEffect } from 'react';
-import { Window as HappyWindow } from 'happy-dom';
 import { AnimatedItemState, useAnimatedItems } from '@/hooks/useAnimatedItems';
 
 type MinimalRecipe = { id: number; title: string };
-
-const happyWindow = new HappyWindow();
-const globalWindow = happyWindow as unknown as Window & typeof globalThis;
-globalWindow.Error = Error;
-globalWindow.SyntaxError = SyntaxError;
-globalWindow.TypeError = TypeError;
-Object.assign(globalThis, {
-	window: globalWindow,
-	document: globalWindow.document,
-	navigator: globalWindow.navigator,
-	HTMLElement: globalWindow.HTMLElement,
-	HTMLInputElement: globalWindow.HTMLInputElement,
-	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
-	Node: globalWindow.Node,
-});
 
 afterEach(() => cleanup());
 

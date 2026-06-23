@@ -7,9 +7,10 @@ import { RecipeCreateCard } from './components/RecipeCreateCard';
 import { LoginScreen } from './components/LoginScreen';
 import { Input } from './components/ui/input';
 import { Switch } from './components/ui/switch';
+import { Button } from './components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { Label } from './components/ui/label';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Shuffle } from 'lucide-react';
 import { useFlipList } from './hooks/useFlipList';
 import { useAnimatedItems } from './hooks/useAnimatedItems';
 import { filterAndSortRecipes, type SortMode, type FilterMode } from './lib/filters';
@@ -34,6 +35,11 @@ interface Recipe {
 	likes: string[];
 	ingredientNames: string[];
 }
+
+type RandomRecipeOpenRequest = {
+	recipeId: number;
+	requestId: number;
+};
 
 const computePillStyle = (value: string, selected: boolean, theme: 'light' | 'dark'): CSSProperties => {
 	let hash = 0;
@@ -93,6 +99,7 @@ function App() {
 	const [selectedLikes, setSelectedLikes] = useState<string[]>([]);
 	const [likeMode, setLikeMode] = useState<FilterMode>('AND');
 	const [sortMode, setSortMode] = useState<SortMode>('AZ');
+	const [randomOpenRequest, setRandomOpenRequest] = useState<RandomRecipeOpenRequest | null>(null);
 	const [theme, setTheme] = useState<'light' | 'dark'>(() => {
 		if (typeof localStorage !== 'undefined') {
 			const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
@@ -126,6 +133,7 @@ function App() {
 	const queryRef = useRef(query);
 	const activeCookbookRef = useRef(activeCookbook);
 	const reloadRequestRef = useRef(0);
+	const randomOpenRequestIdRef = useRef(0);
 	useEffect(() => {
 		queryRef.current = query;
 	}, [query]);
@@ -198,9 +206,15 @@ function App() {
 		setSelectedTags([]);
 		setSelectedIngredients([]);
 		setSelectedLikes([]);
+		setRandomOpenRequest(null);
 	}, [authStatus]);
 	useEffect(() => { reload(); }, [reload]);
-	useEffect(() => { setSelectedTags([]); setSelectedIngredients([]); setSelectedLikes([]); }, [activeCookbook]);
+	useEffect(() => {
+		setSelectedTags([]);
+		setSelectedIngredients([]);
+		setSelectedLikes([]);
+		setRandomOpenRequest(null);
+	}, [activeCookbook]);
 	useEffect(() => {
 		if (!queryEffectInitializedRef.current) {
 			queryEffectInitializedRef.current = true;
@@ -239,6 +253,23 @@ function App() {
 			}),
 		[allRecipes, selectedTags, tagMode, selectedIngredients, ingredientMode, selectedLikes, likeMode, sortMode]
 	);
+	const pickRandomRecipe = useCallback(() => {
+		if (!filtered.length) return;
+		const recipe = filtered[Math.floor(Math.random() * filtered.length)];
+		randomOpenRequestIdRef.current += 1;
+		setRandomOpenRequest({
+			recipeId: recipe.id,
+			requestId: randomOpenRequestIdRef.current
+		});
+	}, [filtered]);
+	const handleRandomOpenHandled = useCallback(() => {
+		setRandomOpenRequest(null);
+	}, []);
+	useEffect(() => {
+		if (randomOpenRequest == null) return;
+		if (filtered.some(recipe => recipe.id === randomOpenRequest.recipeId)) return;
+		setRandomOpenRequest(null);
+	}, [filtered, randomOpenRequest]);
 	useEffect(() => {
 		if (typeof document === 'undefined') return;
 		const root = document.documentElement;
@@ -300,7 +331,15 @@ function App() {
 				<main className="flex flex-1 overflow-hidden">
 					<div className="flex-1 p-6 overflow-auto">
 						{activeCookbook && (
-							<AnimatedRecipeGrid recipes={filtered} onChange={reload} onUsesChange={updateRecipeUses} cookbookId={activeCookbook} likeSuggestions={allLikes} />
+							<AnimatedRecipeGrid
+								recipes={filtered}
+								onChange={reload}
+								onUsesChange={updateRecipeUses}
+								cookbookId={activeCookbook}
+								likeSuggestions={allLikes}
+								randomOpenRequest={randomOpenRequest}
+								onRandomOpenHandled={handleRandomOpenHandled}
+							/>
 						)}
 					</div>
 					<aside className="w-72 border-l border-border p-4 flex flex-col gap-4 bg-sidebar/60 backdrop-blur supports-[backdrop-filter]:bg-sidebar/40 overflow-y-auto">
@@ -392,6 +431,17 @@ function App() {
 						{selectedLikes.length > 0 && (
 							<button onClick={()=>setSelectedLikes([])} className="self-start text-xs text-muted-foreground hover:text-foreground underline">Clear likes</button>
 						)}
+						<div className="mt-auto border-t border-border/70 pt-4">
+							<Button
+								type="button"
+								className="w-full"
+								onClick={pickRandomRecipe}
+								disabled={filtered.length === 0}
+							>
+								<Shuffle className="h-4 w-4" />
+								{filtered.length > 0 ? 'Random matching recipe' : 'No matching recipes'}
+							</Button>
+						</div>
 					</aside>
 				</main>
 			</div>
@@ -404,18 +454,26 @@ function AnimatedRecipeGrid({
 	onChange,
 	onUsesChange,
 	cookbookId,
-	likeSuggestions
+	likeSuggestions,
+	randomOpenRequest,
+	onRandomOpenHandled
 }: {
 	recipes: Recipe[];
 	onChange: () => Promise<void> | void;
 	onUsesChange: (recipeId: number, uses: number) => void;
 	cookbookId: number;
 	likeSuggestions: string[];
+	randomOpenRequest: RandomRecipeOpenRequest | null;
+	onRandomOpenHandled: () => void;
 }) {
 	const EXIT_MS = 300;
 	const items = useAnimatedItems(recipes, EXIT_MS);
 	const ids = items.filter(i=>!i.exiting).map(i => i.id);
 	const { register } = useFlipList(ids, { duration: EXIT_MS });
+	const currentRandomOpenRequest =
+		randomOpenRequest != null && recipes.some(recipe => recipe.id === randomOpenRequest.recipeId)
+			? randomOpenRequest
+			: null;
 	return (
 		<div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(260px,1fr))] items-start">
 			<div className="min-h-[23rem] surface-transition">
@@ -423,6 +481,7 @@ function AnimatedRecipeGrid({
 			</div>
 			{items.map(it => {
 				const common = `min-h-[23rem] transition-all ${it.exiting ? 'opacity-0 scale-95' : 'opacity-100 scale-100'}`;
+				const autoOpenRequestId = currentRandomOpenRequest?.recipeId === it.recipe.id ? currentRandomOpenRequest.requestId : undefined;
 				const style: CSSProperties = { 
 					transitionDuration: it.exiting ? EXIT_MS + 'ms' : '300ms',
 					transitionProperty: it.exiting ? 'opacity, transform' : 'background-color, color, border-color, background, box-shadow, opacity, transform'
@@ -435,7 +494,14 @@ function AnimatedRecipeGrid({
 						className={common + ' surface-transition'}
 						style={style}
 					>
-						<RecipeCard recipe={it.recipe} onChange={() => { void onChange(); }} onUsesChange={onUsesChange} likeSuggestions={likeSuggestions} />
+						<RecipeCard
+							recipe={it.recipe}
+							onChange={() => { void onChange(); }}
+							onUsesChange={onUsesChange}
+							likeSuggestions={likeSuggestions}
+							autoOpenRequestId={autoOpenRequestId}
+							onAutoOpenHandled={autoOpenRequestId == null ? undefined : onRandomOpenHandled}
+						/>
 					</div>
 				);
 			})}

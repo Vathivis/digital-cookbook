@@ -1,62 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { Window as HappyWindow } from 'happy-dom';
 import { RecipeCard } from '@/components/RecipeCard';
-import { webcrypto } from 'node:crypto';
-
-const happyWindow = new HappyWindow();
-const globalWindow = happyWindow as unknown as Window & typeof globalThis;
-globalWindow.Error = Error;
-globalWindow.SyntaxError = SyntaxError;
-globalWindow.TypeError = TypeError;
-Object.assign(globalThis, {
-	window: globalWindow,
-	document: globalWindow.document,
-	navigator: globalWindow.navigator,
-	HTMLElement: globalWindow.HTMLElement,
-	HTMLButtonElement: globalWindow.HTMLButtonElement,
-	HTMLFormElement: globalWindow.HTMLFormElement,
-	HTMLInputElement: globalWindow.HTMLInputElement,
-	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
-	Node: globalWindow.Node,
-	Event: globalWindow.Event,
-	InputEvent: globalWindow.InputEvent,
-	KeyboardEvent: globalWindow.KeyboardEvent,
-	MouseEvent: globalWindow.MouseEvent,
-	PointerEvent: globalWindow.PointerEvent,
-	SubmitEvent: globalWindow.SubmitEvent,
-	FormData: globalWindow.FormData,
-});
-
-if (!globalThis.crypto) {
-	globalThis.crypto = webcrypto as unknown as Crypto;
-}
-
-class ResizeObserverStub {
-	observe() {}
-	unobserve() {}
-	disconnect() {}
-}
-
-Object.assign(globalThis, {
-	ResizeObserver: ResizeObserverStub,
-});
-
-class MutationObserverStub {
-	private callback: MutationCallback;
-	constructor(callback: MutationCallback) {
-		this.callback = callback;
-	}
-	observe() {}
-	disconnect() {}
-	takeRecords(): MutationRecord[] {
-		return [];
-	}
-}
-
-if (!globalThis.MutationObserver) {
-	globalThis.MutationObserver = MutationObserverStub as unknown as typeof MutationObserver;
-}
 
 afterEach(() => {
 	cleanup();
@@ -192,6 +136,50 @@ describe('RecipeCard', () => {
 			});
 			const [, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit | undefined];
 			expect(init?.body).toBe(JSON.stringify({ delta: 3 }));
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test('fetches detail when an auto-open request arrives', async () => {
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...baseRecipe,
+					title: 'Loaded Toast',
+					servings: 2,
+					ingredients: [],
+					steps: ['Serve warm'],
+					notes: '',
+					ingredientNames: [],
+				}));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const onAutoOpenHandled = mock(() => {});
+
+		try {
+			const { rerender } = render(
+				<RecipeCard
+					recipe={{ ...baseRecipe }}
+					onChange={() => {}}
+					onAutoOpenHandled={onAutoOpenHandled}
+				/>
+			);
+			rerender(
+				<RecipeCard
+					recipe={{ ...baseRecipe }}
+					onChange={() => {}}
+					autoOpenRequestId={1}
+					onAutoOpenHandled={onAutoOpenHandled}
+				/>
+			);
+
+			await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/recipes/1', undefined));
+			expect(onAutoOpenHandled).toHaveBeenCalledTimes(1);
 		} finally {
 			globalThis.fetch = originalFetch;
 		}
