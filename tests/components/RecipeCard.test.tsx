@@ -13,13 +13,17 @@ Object.assign(globalThis, {
 	window: globalWindow,
 	document: globalWindow.document,
 	navigator: globalWindow.navigator,
+	Element: globalWindow.Element,
 	HTMLElement: globalWindow.HTMLElement,
 	HTMLButtonElement: globalWindow.HTMLButtonElement,
 	HTMLFormElement: globalWindow.HTMLFormElement,
 	HTMLInputElement: globalWindow.HTMLInputElement,
+	SVGElement: globalWindow.SVGElement,
+	DocumentFragment: globalWindow.DocumentFragment,
 	getComputedStyle: globalWindow.getComputedStyle.bind(globalWindow),
 	Node: globalWindow.Node,
 	Event: globalWindow.Event,
+	CustomEvent: globalWindow.CustomEvent,
 	InputEvent: globalWindow.InputEvent,
 	KeyboardEvent: globalWindow.KeyboardEvent,
 	MouseEvent: globalWindow.MouseEvent,
@@ -38,8 +42,21 @@ class ResizeObserverStub {
 	disconnect() {}
 }
 
+const requestAnimationFrameStub = (callback: FrameRequestCallback) => {
+	return setTimeout(() => callback(Date.now()), 0) as unknown as number;
+};
+const cancelAnimationFrameStub = (id: number) => {
+	clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
+};
+
 Object.assign(globalThis, {
 	ResizeObserver: ResizeObserverStub,
+	requestAnimationFrame: requestAnimationFrameStub,
+	cancelAnimationFrame: cancelAnimationFrameStub,
+});
+Object.assign(globalWindow, {
+	requestAnimationFrame: requestAnimationFrameStub,
+	cancelAnimationFrame: cancelAnimationFrameStub,
 });
 
 class MutationObserverStub {
@@ -192,6 +209,50 @@ describe('RecipeCard', () => {
 			});
 			const [, init] = fetchMock.mock.calls[0] as [string | URL | Request, RequestInit | undefined];
 			expect(init?.body).toBe(JSON.stringify({ delta: 3 }));
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test('fetches detail when an auto-open request arrives', async () => {
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...baseRecipe,
+					title: 'Loaded Toast',
+					servings: 2,
+					ingredients: [],
+					steps: ['Serve warm'],
+					notes: '',
+					ingredientNames: [],
+				}));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		const onAutoOpenHandled = mock(() => {});
+
+		try {
+			const { rerender } = render(
+				<RecipeCard
+					recipe={{ ...baseRecipe }}
+					onChange={() => {}}
+					onAutoOpenHandled={onAutoOpenHandled}
+				/>
+			);
+			rerender(
+				<RecipeCard
+					recipe={{ ...baseRecipe }}
+					onChange={() => {}}
+					autoOpenRequestId={1}
+					onAutoOpenHandled={onAutoOpenHandled}
+				/>
+			);
+
+			await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/recipes/1', undefined));
+			expect(onAutoOpenHandled).toHaveBeenCalledTimes(1);
 		} finally {
 			globalThis.fetch = originalFetch;
 		}
