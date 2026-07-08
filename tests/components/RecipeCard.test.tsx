@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { RecipeCard } from '@/components/RecipeCard';
+import { DEFAULT_COOKING_WATER_RULE } from '@/lib/cookingWater';
 
 afterEach(() => {
 	cleanup();
@@ -180,6 +181,142 @@ describe('RecipeCard', () => {
 
 			await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/recipes/1', undefined));
 			expect(onAutoOpenHandled).toHaveBeenCalledTimes(1);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test('updates cooking water readout from selected servings', async () => {
+		const fetchMock = mock((input: string | URL | Request) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...baseRecipe,
+					servings: 1,
+					cookingWaterRule: DEFAULT_COOKING_WATER_RULE,
+					ingredients: [{ quantity: 100, unit: 'g', name: 'pasta', line: '100 g pasta' }],
+					steps: ['Boil pasta'],
+					notes: '',
+					ingredientNames: ['pasta'],
+				}));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getByText, getByRole } = render(<RecipeCard recipe={{ ...baseRecipe }} onChange={() => {}} />);
+
+			fireEvent.click(getByText('Toast'));
+
+			await waitFor(() => {
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
+			});
+
+			fireEvent.click(getByRole('combobox'));
+			fireEvent.click(getByText('5'));
+
+			await waitFor(() => {
+				expect(getByText('For 5 servings: 3.5 L water, 38.5 g salt')).toBeTruthy();
+			});
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test('clears cooking water readout when edit disables the rule', async () => {
+		let detailIncludesRule = true;
+		const patchBodies: unknown[] = [];
+		const fetchMock = mock((input: string | URL | Request, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1') && init?.method === 'PATCH') {
+				patchBodies.push(JSON.parse(String(init.body)));
+				detailIncludesRule = false;
+				return Promise.resolve(json({ ok: true }));
+			}
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...baseRecipe,
+					servings: 1,
+					cookingWaterRule: detailIncludesRule ? DEFAULT_COOKING_WATER_RULE : null,
+					ingredients: [{ quantity: 100, unit: 'g', name: 'pasta', line: '100 g pasta' }],
+					steps: ['Boil pasta'],
+					notes: '',
+					ingredientNames: ['pasta'],
+				}));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getByText, getByRole, queryByText } = render(<RecipeCard recipe={{ ...baseRecipe }} onChange={() => {}} />);
+
+			fireEvent.click(getByText('Toast'));
+
+			await waitFor(() => {
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
+			});
+
+			fireEvent.click(getByRole('button', { name: 'Edit' }));
+			fireEvent.click(getByRole('switch', { name: 'Cooking water' }));
+			fireEvent.click(getByRole('button', { name: 'Save' }));
+
+			await waitFor(() => {
+				expect(queryByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeNull();
+			});
+			expect(patchBodies[0]).toMatchObject({ cookingWaterRule: null });
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test('collapses cooking water fields without disabling the rule', async () => {
+		const patchBodies: unknown[] = [];
+		const fetchMock = mock((input: string | URL | Request, init?: RequestInit) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url.endsWith('/api/recipes/1') && init?.method === 'PATCH') {
+				patchBodies.push(JSON.parse(String(init.body)));
+				return Promise.resolve(json({ ok: true }));
+			}
+			if (url.endsWith('/api/recipes/1')) {
+				return Promise.resolve(json({
+					...baseRecipe,
+					servings: 1,
+					cookingWaterRule: DEFAULT_COOKING_WATER_RULE,
+					ingredients: [{ quantity: 100, unit: 'g', name: 'pasta', line: '100 g pasta' }],
+					steps: ['Boil pasta'],
+					notes: '',
+					ingredientNames: ['pasta'],
+				}));
+			}
+			return Promise.resolve(json({ ok: true }));
+		});
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+		try {
+			const { getByText, getByRole, queryByDisplayValue } = render(<RecipeCard recipe={{ ...baseRecipe }} onChange={() => {}} />);
+
+			fireEvent.click(getByText('Toast'));
+			await waitFor(() => {
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
+			});
+
+			fireEvent.click(getByRole('button', { name: 'Edit' }));
+			const cookingWaterSwitch = getByRole('switch', { name: 'Cooking water' });
+			expect(cookingWaterSwitch.getAttribute('aria-checked')).toBe('true');
+			fireEvent.click(getByRole('button', { name: 'Collapse cooking water fields' }));
+
+			expect(cookingWaterSwitch.getAttribute('aria-checked')).toBe('true');
+			expect(queryByDisplayValue('11')).toBeNull();
+
+			fireEvent.click(getByRole('button', { name: 'Save' }));
+
+			await waitFor(() => expect(patchBodies).toHaveLength(1));
+			expect(patchBodies[0]).toMatchObject({ cookingWaterRule: DEFAULT_COOKING_WATER_RULE });
 		} finally {
 			globalThis.fetch = originalFetch;
 		}

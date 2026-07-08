@@ -11,6 +11,8 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { GripVertical, X as XIcon, ImagePlus } from 'lucide-react';
 import { TagSuggestions } from './TagSuggestions';
+import { CookingWaterRuleFields } from './CookingWaterRuleFields';
+import { createCookingWaterRuleDraft, parseCookingWaterRuleDraft, type CookingWaterRuleDraft } from '../lib/cookingWater';
 
 type EditableIngredient = StructuredIngredient & { _k: string };
 type EditableStep = { _k: string; text: string };
@@ -39,6 +41,9 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	const [author, setAuthor] = useState('');
 	const [description, setDescription] = useState('');
 	const [servings, setServings] = useState<number>(1);
+	const [cookingWaterEnabled, setCookingWaterEnabled] = useState(false);
+	const [cookingWaterDraft, setCookingWaterDraft] = useState<CookingWaterRuleDraft>(() => createCookingWaterRuleDraft());
+	const [cookingWaterError, setCookingWaterError] = useState('');
 	const [ingredients, setIngredients] = useState<EditableIngredient[]>([createBlankIngredient()]);
 	const [filteredIngredients, setFilteredIngredients] = useState<string[]>([]);
 	const [activeIngredientIndex, setActiveIngredientIndex] = useState<number | null>(null);
@@ -186,6 +191,9 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 		setAuthor('');
 		setDescription('');
 		setServings(1);
+		setCookingWaterEnabled(false);
+		setCookingWaterDraft(createCookingWaterRuleDraft());
+		setCookingWaterError('');
 		setIngredients([createBlankIngredient()]);
 		setSteps([createBlankStep()]);
 		setNotes('');
@@ -199,6 +207,12 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 	}, [allTags]);
 	const submit = async () => {
 	if (!title.trim()) return;
+	const cookingWaterRule = cookingWaterEnabled ? parseCookingWaterRuleDraft(cookingWaterDraft) : null;
+	if (cookingWaterEnabled && !cookingWaterRule) {
+		setCookingWaterError('Enter positive numbers for the cooking water rule.');
+		return;
+	}
+	setCookingWaterError('');
 	const cleanedIngredients = ingredients
 		.filter(i=> (i.name||'').trim() || (i.line||'').trim())
 		.map(({ _k, ...rest }) => {
@@ -217,6 +231,7 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 		notes: notes.trim(),
 		photoDataUrl: photo,
 		photoThumbnailDataUrl: photoThumbnail,
+		cookingWaterRule,
 		tags: tagList
 	});
 	resetForm();
@@ -509,6 +524,22 @@ export function RecipeCreateCard({ cookbookId, onCreated }: Props) {
 												onContainerChange={setIngredientSuggestionsNode}
 											/>, document.body
 										)}
+									</div>
+									<div className="mt-4">
+										<CookingWaterRuleFields
+											idPrefix="create-cooking-water"
+											enabled={cookingWaterEnabled}
+											draft={cookingWaterDraft}
+											error={cookingWaterError}
+											onEnabledChange={(enabled) => {
+												setCookingWaterEnabled(enabled);
+												setCookingWaterError('');
+											}}
+											onDraftChange={(draft) => {
+												setCookingWaterDraft(draft);
+												setCookingWaterError('');
+											}}
+										/>
 									</div>
 								</div>
 								<div>
