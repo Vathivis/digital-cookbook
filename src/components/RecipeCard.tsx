@@ -10,6 +10,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { TagSuggestions } from './TagSuggestions';
+import { CookingWaterRuleFields } from './CookingWaterRuleFields';
+import {
+	calculateCookingWater,
+	createCookingWaterRuleDraft,
+	formatCookingWaterAmount,
+	parseCookingWaterRuleDraft,
+	type CookingWaterRule,
+	type CookingWaterRuleDraft
+} from '../lib/cookingWater';
 
 type BaseIngredient = Omit<StructuredIngredient, 'line'> & { line?: string | null };
 
@@ -25,6 +34,7 @@ interface RecipeSummary {
 	hasPhoto?: boolean;
 	uses?: number;
 	servings?: number;
+	cookingWaterRule?: CookingWaterRule | null;
 	created_at?: string;
 	tags: string[];
 	likes: string[];
@@ -111,6 +121,7 @@ const normalizeRecipeDetail = (summary: RecipeSummary, data: Partial<RecipeDetai
 		photo: data.photo ?? summary.photo ?? null,
 		uses: data.uses ?? summary.uses ?? 0,
 		servings: data.servings ?? summary.servings ?? 1,
+		cookingWaterRule: data.cookingWaterRule !== undefined ? data.cookingWaterRule : summary.cookingWaterRule ?? null,
 		tags: data.tags ?? summary.tags ?? [],
 		likes: uniqNames(data.likes ?? summary.likes ?? []),
 		ingredients: normalizeIngredients(data.ingredients),
@@ -168,6 +179,9 @@ export function RecipeCard({
 	const genKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 	const [eservings, setEServings] = useState<number>(1);
 	const [viewServings, setViewServings] = useState<number>(1);
+	const [ecookingWaterEnabled, setECookingWaterEnabled] = useState(false);
+	const [ecookingWaterDraft, setECookingWaterDraft] = useState<CookingWaterRuleDraft>(() => createCookingWaterRuleDraft());
+	const [ecookingWaterError, setECookingWaterError] = useState('');
 	const [enotes, setENotes] = useState('');
 	const [addingTag, setAddingTag] = useState(false);
 	const [tagValue, setTagValue] = useState('');
@@ -556,16 +570,26 @@ export function RecipeCard({
 		setENotes(full.notes || '');
 		setEServings(full.servings || 1);
 		setViewServings(full.servings || 1);
+		setECookingWaterEnabled(Boolean(full.cookingWaterRule));
+		setECookingWaterDraft(createCookingWaterRuleDraft(full.cookingWaterRule ?? undefined));
+		setECookingWaterError('');
 		setLikes(full.likes || likes);
 		setEditing(true);
 	};
 	const saveEdit = async () => {
 		if (!full) return;
+		const cookingWaterRule = ecookingWaterEnabled ? parseCookingWaterRuleDraft(ecookingWaterDraft) : null;
+		if (ecookingWaterEnabled && !cookingWaterRule) {
+			setECookingWaterError('Enter positive numbers for the cooking water rule.');
+			return;
+		}
+		setECookingWaterError('');
 		await updateRecipe(full.id, {
 			title: etitle.trim(),
 			author: eauthor.trim(),
 			description: edesc,
 			servings: eservings,
+			cookingWaterRule,
 			ingredients: eing.map(({ _k, ...rest }) => {
 				void _k;
 				return rest;
@@ -895,6 +919,8 @@ export function RecipeCard({
 		document.body.removeChild(meas);
 	}, [recipe.tags]);
 
+	const cookingWaterResult = full?.cookingWaterRule ? calculateCookingWater(full.cookingWaterRule, viewServings) : null;
+
 	return (
 		<>
 			<div onClick={openDialog} role="button" tabIndex={0} className="min-h-[23rem] text-left relative group rounded-lg border border-border bg-card shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-shadow cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-ring">
@@ -1085,6 +1111,17 @@ export function RecipeCard({
 											return <li key={`${ing.line ?? ing.name ?? i}`}>{parts || fallback}</li>;
 										})}
 									</ul>
+									{cookingWaterResult && (
+										<div className="mt-3 rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+											<span className="font-medium">Cooking water</span>
+											<span className="ml-2 text-muted-foreground">
+												For {viewServings} {viewServings === 1 ? 'serving' : 'servings'}:{' '}
+												{formatCookingWaterAmount(cookingWaterResult.amountGrams)} g batch,{' '}
+												{formatCookingWaterAmount(cookingWaterResult.waterLiters)} L water,{' '}
+												{formatCookingWaterAmount(cookingWaterResult.saltGrams)} g salt
+											</span>
+										</div>
+									)}
 								</div>
 								<div>
 									<h4 className="font-semibold mb-2">Steps</h4>
@@ -1269,6 +1306,22 @@ export function RecipeCard({
 													onContainerChange={setIngredientSuggestionsNode}
 												/>, document.body
 											)}
+										</div>
+										<div className="mt-4">
+											<CookingWaterRuleFields
+												idPrefix={`edit-cooking-water-${full?.id ?? recipe.id}`}
+												enabled={ecookingWaterEnabled}
+												draft={ecookingWaterDraft}
+												error={ecookingWaterError}
+												onEnabledChange={(enabled) => {
+													setECookingWaterEnabled(enabled);
+													setECookingWaterError('');
+												}}
+												onDraftChange={(draft) => {
+													setECookingWaterDraft(draft);
+													setECookingWaterError('');
+												}}
+											/>
 										</div>
 									</div>
 									<div>

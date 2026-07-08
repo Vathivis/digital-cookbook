@@ -156,6 +156,97 @@ test('recipe tags are returned alphabetically from recipe endpoints', async () =
 	expect(detailPayload.tags).toEqual(expectedTags);
 });
 
+test('recipe cooking water rule persists across recipe endpoints and validates positive values', async () => {
+	const omittedRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'No Cooking Water Rule',
+			description: '',
+			author: '',
+			ingredients: [],
+			steps: [],
+			notes: ''
+		})
+	});
+	expect(omittedRes.status).toBe(200);
+	const omittedRecipe = (await omittedRes.json()) as { id: number };
+	const omittedDetail = await callApi(`/api/recipes/${omittedRecipe.id}`);
+	expect(omittedDetail.status).toBe(200);
+	await expect(omittedDetail.json()).resolves.toMatchObject({ cookingWaterRule: null });
+
+	const rule = {
+		amountGramsPerServing: 100,
+		minimumWaterLiters: 1,
+		extraWaterLiters: 0.5,
+		extraWaterPerGrams: 100,
+		saltGramsPerLiter: 11
+	};
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Cooking Water Rule Recipe',
+			description: '',
+			author: '',
+			servings: 5,
+			ingredients: [],
+			steps: [],
+			notes: '',
+			cookingWaterRule: rule
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const created = (await createRes.json()) as { id: number };
+
+	const detailRes = await callApi(`/api/recipes/${created.id}`);
+	expect(detailRes.status).toBe(200);
+	await expect(detailRes.json()).resolves.toMatchObject({ cookingWaterRule: rule });
+
+	const listRes = await callApi('/api/recipes?cookbookId=1');
+	expect(listRes.status).toBe(200);
+	const listPayload = (await listRes.json()) as Array<{ id: number; cookingWaterRule: unknown }>;
+	expect(listPayload.find((recipe) => recipe.id === created.id)?.cookingWaterRule).toEqual(rule);
+
+	const searchRes = await callApi('/api/recipes/search?cookbookId=1&q=Cooking%20Water%20Rule');
+	expect(searchRes.status).toBe(200);
+	const searchPayload = (await searchRes.json()) as Array<{ id: number; cookingWaterRule: unknown }>;
+	expect(searchPayload.find((recipe) => recipe.id === created.id)?.cookingWaterRule).toEqual(rule);
+
+	const updatedRule = { ...rule, minimumWaterLiters: 1.5, extraWaterLiters: 0.4 };
+	const patchRes = await callApi(`/api/recipes/${created.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ cookingWaterRule: updatedRule })
+	});
+	expect(patchRes.status).toBe(200);
+	const updatedDetail = await callApi(`/api/recipes/${created.id}`);
+	await expect(updatedDetail.json()).resolves.toMatchObject({ cookingWaterRule: updatedRule });
+
+	const clearRes = await callApi(`/api/recipes/${created.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ cookingWaterRule: null })
+	});
+	expect(clearRes.status).toBe(200);
+	const clearedDetail = await callApi(`/api/recipes/${created.id}`);
+	await expect(clearedDetail.json()).resolves.toMatchObject({ cookingWaterRule: null });
+
+	const invalidZero = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Invalid Cooking Water Rule',
+			cookingWaterRule: { ...rule, extraWaterPerGrams: 0 }
+		})
+	});
+	expect(invalidZero.status).toBe(400);
+
+	const invalidPartial = await callApi(`/api/recipes/${created.id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ cookingWaterRule: { amountGramsPerServing: 100 } })
+	});
+	expect(invalidPartial.status).toBe(400);
+});
+
 test('recipe photo endpoints reject unsafe MIME types and do not echo legacy unsafe types', async () => {
 	const parameterizedCreate = await callApi('/api/recipes', {
 		method: 'POST',

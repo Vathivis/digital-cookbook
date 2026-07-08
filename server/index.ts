@@ -28,6 +28,11 @@ interface RecipeRecord {
 	author: string;
 	uses: number;
 	servings: number;
+	cooking_water_amount_grams_per_serving: number | null;
+	cooking_water_minimum_water_liters: number | null;
+	cooking_water_extra_water_liters: number | null;
+	cooking_water_extra_water_per_grams: number | null;
+	cooking_water_salt_grams_per_liter: number | null;
 	created_at: string;
 }
 
@@ -45,6 +50,16 @@ interface StepRow {
 }
 
 const nonEmptyString = z.string().trim().min(1);
+const positiveFiniteNumber = z.number().finite().positive();
+const cookingWaterRuleSchema = z
+	.object({
+		amountGramsPerServing: positiveFiniteNumber,
+		minimumWaterLiters: positiveFiniteNumber,
+		extraWaterLiters: positiveFiniteNumber,
+		extraWaterPerGrams: positiveFiniteNumber,
+		saltGramsPerLiter: positiveFiniteNumber
+	})
+	.strict();
 const DEFAULT_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH = 2_000_000;
 const parsePositiveIntegerEnv = (name: string, defaultValue: number) => {
 	const raw = process.env[name]?.trim();
@@ -69,6 +84,7 @@ const recipeBaseSchema = z
 		notes: z.string().max(10_000).optional(),
 		photoDataUrl: z.union([z.string().max(35_000_000), z.null()]).optional(),
 		photoThumbnailDataUrl: z.union([z.string().max(PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH), z.null()]).optional(),
+		cookingWaterRule: z.union([cookingWaterRuleSchema, z.null()]).optional(),
 		tags: z.array(z.string().trim().min(1).max(64)).max(50).optional()
 	})
 	.strict();
@@ -207,6 +223,11 @@ CREATE TABLE IF NOT EXISTS recipes (
 	author TEXT DEFAULT '',
 	uses INTEGER DEFAULT 0,
 	servings INTEGER DEFAULT 1,
+	cooking_water_amount_grams_per_serving REAL,
+	cooking_water_minimum_water_liters REAL,
+	cooking_water_extra_water_liters REAL,
+	cooking_water_extra_water_per_grams REAL,
+	cooking_water_salt_grams_per_liter REAL,
 	created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY(cookbook_id) REFERENCES cookbooks(id) ON DELETE CASCADE
 );
@@ -359,7 +380,12 @@ migrateRecipePhotoVariantsToBlobStorage();
 
 const columnDefinitions = {
 	recipes: {
-		servings: 'INTEGER DEFAULT 1'
+		servings: 'INTEGER DEFAULT 1',
+		cooking_water_amount_grams_per_serving: 'REAL',
+		cooking_water_minimum_water_liters: 'REAL',
+		cooking_water_extra_water_liters: 'REAL',
+		cooking_water_extra_water_per_grams: 'REAL',
+		cooking_water_salt_grams_per_liter: 'REAL'
 	},
 	ingredients: {
 		ingredient_id: 'INTEGER',
@@ -387,6 +413,11 @@ function ensureColumn<T extends keyof ColumnDefinitions>(table: T, column: keyof
 }
 
 ensureColumn('recipes', 'servings');
+ensureColumn('recipes', 'cooking_water_amount_grams_per_serving');
+ensureColumn('recipes', 'cooking_water_minimum_water_liters');
+ensureColumn('recipes', 'cooking_water_extra_water_liters');
+ensureColumn('recipes', 'cooking_water_extra_water_per_grams');
+ensureColumn('recipes', 'cooking_water_salt_grams_per_liter');
 ensureColumn('ingredients', 'ingredient_id');
 ensureColumn('ingredients', 'quantity');
 ensureColumn('ingredients', 'unit');
@@ -867,6 +898,29 @@ const fetchPhotoUrls = (ids: number[]) => {
 	return grouped;
 };
 
+const serializeRecipeRecord = (recipe: RecipeRecord) => {
+	const {
+		cooking_water_amount_grams_per_serving: amountGramsPerServing,
+		cooking_water_minimum_water_liters: minimumWaterLiters,
+		cooking_water_extra_water_liters: extraWaterLiters,
+		cooking_water_extra_water_per_grams: extraWaterPerGrams,
+		cooking_water_salt_grams_per_liter: saltGramsPerLiter,
+		...rest
+	} = recipe;
+	const cookingWaterRule =
+		amountGramsPerServing === null ||
+		minimumWaterLiters === null ||
+		extraWaterLiters === null ||
+		extraWaterPerGrams === null ||
+		saltGramsPerLiter === null
+			? null
+			: { amountGramsPerServing, minimumWaterLiters, extraWaterLiters, extraWaterPerGrams, saltGramsPerLiter };
+	return {
+		...rest,
+		cookingWaterRule
+	};
+};
+
 const withRecipeMetadata = (recipes: RecipeRecord[]) => {
 	if (!recipes.length) return [];
 	const ids = recipes.map((r) => r.id as number);
@@ -876,8 +930,9 @@ const withRecipeMetadata = (recipes: RecipeRecord[]) => {
 	const photosBy = fetchPhotoUrls(ids);
 	return recipes.map((r) => {
 		const photos = photosBy[r.id] ?? {};
+		const recipe = serializeRecipeRecord(r);
 		return {
-			...r,
+			...recipe,
 			photo: photos.thumbnail_card ?? null,
 			photoFull: photos.full ?? null,
 			photoDetail: photos.thumbnail_detail ?? null,
@@ -1074,7 +1129,10 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const { cookbookId } = parsed.data;
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, uses, servings,
+					cooking_water_amount_grams_per_serving, cooking_water_minimum_water_liters,
+					cooking_water_extra_water_liters, cooking_water_extra_water_per_grams,
+					cooking_water_salt_grams_per_liter, created_at
 			 FROM recipes WHERE cookbook_id = ?
 			 ORDER BY title COLLATE NOCASE ASC, id ASC`,
 			cookbookId
@@ -1115,7 +1173,10 @@ export const app = new Elysia({
 		}
 		const limitClause = hasTerm ? 'LIMIT 200' : '';
 		const recipes = allStatement<RecipeRecord>(
-			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.uses, r.servings, r.created_at
+			`SELECT r.id, r.cookbook_id, r.title, r.description, r.author, r.uses, r.servings,
+					r.cooking_water_amount_grams_per_serving, r.cooking_water_minimum_water_liters,
+					r.cooking_water_extra_water_liters, r.cooking_water_extra_water_per_grams,
+					r.cooking_water_salt_grams_per_liter, r.created_at
 			 FROM recipes r
 			 WHERE r.cookbook_id = ?
 			 ${whereClause}
@@ -1148,7 +1209,10 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const id = parsed.data.id;
 		const recipe = getStatement<RecipeRecord>(
-			`SELECT id, cookbook_id, title, description, author, uses, servings, created_at
+			`SELECT id, cookbook_id, title, description, author, uses, servings,
+					cooking_water_amount_grams_per_serving, cooking_water_minimum_water_liters,
+					cooking_water_extra_water_liters, cooking_water_extra_water_per_grams,
+					cooking_water_salt_grams_per_liter, created_at
 			 FROM recipes WHERE id=?`,
 			id
 		);
@@ -1183,7 +1247,7 @@ export const app = new Elysia({
 			.filter((v, idx, arr) => v && arr.indexOf(v) === idx);
 		const photos = fetchPhotoUrls([id])[id] ?? {};
 		return {
-			...recipe,
+			...serializeRecipeRecord(recipe),
 			photo: photos.full ?? photos.thumbnail_card ?? null,
 			photoFull: photos.full ?? null,
 			photoDetail: photos.thumbnail_detail ?? null,
@@ -1209,14 +1273,25 @@ export const app = new Elysia({
 			return badRequest(set, 'photoThumbnailDataUrl requires supplied photoDataUrl');
 		}
 		const create = (payload: RecipeCreateInput) => {
+			const cookingWaterRule = payload.cookingWaterRule ?? null;
 			const info = runStatement(
-				`INSERT INTO recipes (cookbook_id, title, description, author, servings)
-				 VALUES (?,?,?,?,?)`,
+				`INSERT INTO recipes (
+					cookbook_id, title, description, author, servings,
+					cooking_water_amount_grams_per_serving, cooking_water_minimum_water_liters,
+					cooking_water_extra_water_liters, cooking_water_extra_water_per_grams,
+					cooking_water_salt_grams_per_liter
+				)
+				 VALUES (?,?,?,?,?,?,?,?,?,?)`,
 				payload.cookbook_id,
 				payload.title,
 				payload.description ?? '',
 				payload.author ?? '',
-				payload.servings ?? 1
+				payload.servings ?? 1,
+				cookingWaterRule?.amountGramsPerServing ?? null,
+				cookingWaterRule?.minimumWaterLiters ?? null,
+				cookingWaterRule?.extraWaterLiters ?? null,
+				cookingWaterRule?.extraWaterPerGrams ?? null,
+				cookingWaterRule?.saltGramsPerLiter ?? null
 			);
 			const recipeId = Number(info.lastInsertRowid);
 			if (payload.photoDataUrl) {
@@ -1244,6 +1319,7 @@ export const app = new Elysia({
 		if (!parsed.success) return validationError(set, parsed.error);
 		const hasPhotoDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoDataUrl');
 		const hasPhotoThumbnailDataUrl = Object.prototype.hasOwnProperty.call(parsed.data, 'photoThumbnailDataUrl');
+		const hasCookingWaterRule = Object.prototype.hasOwnProperty.call(parsed.data, 'cookingWaterRule');
 		if (parsed.data.photoDataUrl != null && !isAllowedPhotoDataUrl(parsed.data.photoDataUrl)) {
 			return badRequest(set, 'photoDataUrl must be a supported image data URL');
 		}
@@ -1301,6 +1377,23 @@ export const app = new Elysia({
 			if (payload.servings !== undefined) {
 				updates.push('servings = ?');
 				params.push(payload.servings);
+			}
+			if (hasCookingWaterRule) {
+				const cookingWaterRule = payload.cookingWaterRule ?? null;
+				updates.push(
+					'cooking_water_amount_grams_per_serving = ?',
+					'cooking_water_minimum_water_liters = ?',
+					'cooking_water_extra_water_liters = ?',
+					'cooking_water_extra_water_per_grams = ?',
+					'cooking_water_salt_grams_per_liter = ?'
+				);
+				params.push(
+					cookingWaterRule?.amountGramsPerServing ?? null,
+					cookingWaterRule?.minimumWaterLiters ?? null,
+					cookingWaterRule?.extraWaterLiters ?? null,
+					cookingWaterRule?.extraWaterPerGrams ?? null,
+					cookingWaterRule?.saltGramsPerLiter ?? null
+				);
 			}
 			if (updates.length) {
 				params.push(id);

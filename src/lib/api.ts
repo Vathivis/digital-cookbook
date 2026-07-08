@@ -1,3 +1,5 @@
+import type { CookingWaterRule } from './cookingWater';
+
 export interface StructuredIngredient {
 	line?: string | null;
 	quantity?: number | null;
@@ -17,6 +19,7 @@ export type RecipeInput = {
 	notes?: string;
 	photoDataUrl?: string | null;
 	photoThumbnailDataUrl?: string | null;
+	cookingWaterRule?: CookingWaterRule | null;
 	tags?: string[];
 };
 
@@ -34,6 +37,7 @@ export type RecipeSummary = {
 	hasPhoto?: boolean;
 	uses: number;
 	servings: number;
+	cookingWaterRule: CookingWaterRule | null;
 	created_at: string;
 	tags: string[];
 	likes: string[];
