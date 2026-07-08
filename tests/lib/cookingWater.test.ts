@@ -28,8 +28,8 @@ describe('cooking water helpers', () => {
 
 	test('parses draft values and rejects non-positive values', () => {
 		expect(parseCookingWaterRuleDraft(createCookingWaterRuleDraft())).toEqual(DEFAULT_COOKING_WATER_RULE);
-		expect(parseCookingWaterRuleDraft({ ...createCookingWaterRuleDraft(), extraWaterPerGrams: '0' })).toBeNull();
-		expect(parseCookingWaterRuleDraft({ ...createCookingWaterRuleDraft(), extraWaterLiters: '0,75' })).toMatchObject({
+		expect(parseCookingWaterRuleDraft({ ...createCookingWaterRuleDraft(), extraWaterLitersPerServing: '0' })).toBeNull();
+		expect(parseCookingWaterRuleDraft({ ...createCookingWaterRuleDraft(), extraWaterLitersPerServing: '0,75' })).toMatchObject({
 			extraWaterLiters: 0.75
 		});
 	});

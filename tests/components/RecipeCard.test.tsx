@@ -211,14 +211,14 @@ describe('RecipeCard', () => {
 			fireEvent.click(getByText('Toast'));
 
 			await waitFor(() => {
-				expect(getByText('For 1 serving: 100 g batch, 1.5 L water, 16.5 g salt')).toBeTruthy();
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
 			});
 
 			fireEvent.click(getByRole('combobox'));
 			fireEvent.click(getByText('5'));
 
 			await waitFor(() => {
-				expect(getByText('For 5 servings: 500 g batch, 3.5 L water, 38.5 g salt')).toBeTruthy();
+				expect(getByText('For 5 servings: 3.5 L water, 38.5 g salt')).toBeTruthy();
 			});
 		} finally {
 			globalThis.fetch = originalFetch;
@@ -257,7 +257,7 @@ describe('RecipeCard', () => {
 			fireEvent.click(getByText('Toast'));
 
 			await waitFor(() => {
-				expect(getByText('For 1 serving: 100 g batch, 1.5 L water, 16.5 g salt')).toBeTruthy();
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
 			});
 
 			fireEvent.click(getByRole('button', { name: 'Edit' }));
@@ -265,7 +265,7 @@ describe('RecipeCard', () => {
 			fireEvent.click(getByRole('button', { name: 'Save' }));
 
 			await waitFor(() => {
-				expect(queryByText('For 1 serving: 100 g batch, 1.5 L water, 16.5 g salt')).toBeNull();
+				expect(queryByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeNull();
 			});
 			expect(patchBodies[0]).toMatchObject({ cookingWaterRule: null });
 		} finally {
@@ -302,7 +302,7 @@ describe('RecipeCard', () => {
 
 			fireEvent.click(getByText('Toast'));
 			await waitFor(() => {
-				expect(getByText('For 1 serving: 100 g batch, 1.5 L water, 16.5 g salt')).toBeTruthy();
+				expect(getByText('For 1 serving: 1.5 L water, 16.5 g salt')).toBeTruthy();
 			});
 
 			fireEvent.click(getByRole('button', { name: 'Edit' }));

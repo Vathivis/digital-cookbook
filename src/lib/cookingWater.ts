@@ -12,35 +12,44 @@ export type CookingWaterResult = {
 	saltGrams: number;
 };
 
-export type CookingWaterRuleDraft = Record<keyof CookingWaterRule, string>;
+export type CookingWaterRuleDraft = {
+	minimumWaterLiters: string;
+	extraWaterLitersPerServing: string;
+	saltGramsPerLiter: string;
+};
+
+const STORAGE_AMOUNT_GRAMS_PER_SERVING = 100;
 
 export const DEFAULT_COOKING_WATER_RULE: CookingWaterRule = {
-	amountGramsPerServing: 100,
+	amountGramsPerServing: STORAGE_AMOUNT_GRAMS_PER_SERVING,
 	minimumWaterLiters: 1,
 	extraWaterLiters: 0.5,
-	extraWaterPerGrams: 100,
+	extraWaterPerGrams: STORAGE_AMOUNT_GRAMS_PER_SERVING,
 	saltGramsPerLiter: 11
 };
 
 export function createCookingWaterRuleDraft(rule: CookingWaterRule = DEFAULT_COOKING_WATER_RULE): CookingWaterRuleDraft {
+	const extraWaterLitersPerServing = rule.extraWaterLiters * (rule.amountGramsPerServing / rule.extraWaterPerGrams);
 	return {
-		amountGramsPerServing: String(rule.amountGramsPerServing),
 		minimumWaterLiters: String(rule.minimumWaterLiters),
-		extraWaterLiters: String(rule.extraWaterLiters),
-		extraWaterPerGrams: String(rule.extraWaterPerGrams),
+		extraWaterLitersPerServing: String(extraWaterLitersPerServing),
 		saltGramsPerLiter: String(rule.saltGramsPerLiter)
 	};
 }
 
 export function parseCookingWaterRuleDraft(draft: CookingWaterRuleDraft): CookingWaterRule | null {
-	const amountGramsPerServing = Number(draft.amountGramsPerServing.replace(/,/g, '.'));
 	const minimumWaterLiters = Number(draft.minimumWaterLiters.replace(/,/g, '.'));
-	const extraWaterLiters = Number(draft.extraWaterLiters.replace(/,/g, '.'));
-	const extraWaterPerGrams = Number(draft.extraWaterPerGrams.replace(/,/g, '.'));
+	const extraWaterLitersPerServing = Number(draft.extraWaterLitersPerServing.replace(/,/g, '.'));
 	const saltGramsPerLiter = Number(draft.saltGramsPerLiter.replace(/,/g, '.'));
-	const values = [amountGramsPerServing, minimumWaterLiters, extraWaterLiters, extraWaterPerGrams, saltGramsPerLiter];
+	const values = [minimumWaterLiters, extraWaterLitersPerServing, saltGramsPerLiter];
 	if (!values.every((value) => Number.isFinite(value) && value > 0)) return null;
-	return { amountGramsPerServing, minimumWaterLiters, extraWaterLiters, extraWaterPerGrams, saltGramsPerLiter };
+	return {
+		amountGramsPerServing: STORAGE_AMOUNT_GRAMS_PER_SERVING,
+		minimumWaterLiters,
+		extraWaterLiters: extraWaterLitersPerServing,
+		extraWaterPerGrams: STORAGE_AMOUNT_GRAMS_PER_SERVING,
+		saltGramsPerLiter
+	};
 }
 
 export function calculateCookingWater(rule: CookingWaterRule, servings: number): CookingWaterResult {

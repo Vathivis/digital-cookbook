@@ -1116,7 +1116,6 @@ export function RecipeCard({
 											<span className="font-medium">Cooking water</span>
 											<span className="ml-2 text-muted-foreground">
 												For {viewServings} {viewServings === 1 ? 'serving' : 'servings'}:{' '}
-												{formatCookingWaterAmount(cookingWaterResult.amountGrams)} g batch,{' '}
 												{formatCookingWaterAmount(cookingWaterResult.waterLiters)} L water,{' '}
 												{formatCookingWaterAmount(cookingWaterResult.saltGrams)} g salt
 											</span>
