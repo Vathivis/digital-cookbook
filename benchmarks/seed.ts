@@ -191,6 +191,17 @@ function seedCachePath(options: BenchmarkOptions) {
 	return `${options.dbPath}.seed.json`;
 }
 
+function resetDisposableSeedFiles(options: BenchmarkOptions) {
+	ensureDir(path.dirname(options.dbPath));
+	for (const filePath of [options.dbPath, `${options.dbPath}-wal`, `${options.dbPath}-shm`, seedCachePath(options)]) {
+		if (!fs.existsSync(filePath)) continue;
+		if (!fs.statSync(filePath).isFile()) {
+			throw new Error(`Refusing to replace non-file benchmark path: ${filePath}`);
+		}
+		fs.rmSync(filePath);
+	}
+}
+
 function seedCacheKey(options: BenchmarkOptions) {
 	const imageFixtures = listImageFixtures(options).map(({ name, size, mtimeMs, contentType }) => ({
 		name,
@@ -245,6 +256,42 @@ function thumbnailDataUrl() {
 	return generatedThumbnailDataUrl;
 }
 
+function setJournalMode(database: BenchmarkDatabase, mode: 'MEMORY' | 'WAL') {
+	const statement = database.prepare(`PRAGMA journal_mode = ${mode}`);
+	try {
+		const result = statement.get() as { journal_mode?: string } | undefined;
+		if (result?.journal_mode?.toUpperCase() !== mode) {
+			throw new Error(`SQLite journal mode ${mode} was rejected; active mode is ${result?.journal_mode ?? 'unknown'}`);
+		}
+	} finally {
+		statement.finalize();
+	}
+}
+
+function setSynchronousMode(database: BenchmarkDatabase, mode: 'OFF' | 'NORMAL') {
+	database.exec(`PRAGMA synchronous = ${mode}`);
+	const statement = database.prepare('PRAGMA synchronous');
+	try {
+		const result = statement.get() as { synchronous?: number } | undefined;
+		const expected = mode === 'OFF' ? 0 : 1;
+		if (result?.synchronous !== expected) {
+			throw new Error(`SQLite synchronous mode ${mode} was rejected; active value is ${result?.synchronous ?? 'unknown'}`);
+		}
+	} finally {
+		statement.finalize();
+	}
+}
+
+function enableDisposableSeedPragmas(database: BenchmarkDatabase) {
+	setJournalMode(database, 'MEMORY');
+	setSynchronousMode(database, 'OFF');
+}
+
+function restoreRuntimePragmas(database: BenchmarkDatabase) {
+	setJournalMode(database, 'WAL');
+	setSynchronousMode(database, 'NORMAL');
+}
+
 function clearDatabase(database: BenchmarkDatabase) {
 	database.exec('PRAGMA foreign_keys = OFF');
 	database.exec('BEGIN TRANSACTION');
@@ -279,6 +326,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 	const imageDataUrls = loadImages(options);
 	const rng = new Rng(options.seed);
 
+	enableDisposableSeedPragmas(database);
 	clearDatabase(database);
 
 	const insertCookbook = database.prepare('INSERT INTO cookbooks (name) VALUES (?)');
@@ -301,6 +349,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 	const linkTag = database.prepare('INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id) VALUES (?,?)');
 	const insertLike = database.prepare('INSERT OR IGNORE INTO recipe_likes (recipe_id, name) VALUES (?,?)');
 
+	let summary: SeedSummary;
 	try {
 		database.exec('BEGIN TRANSACTION');
 		const cookbookId = lastInsertId(insertCookbook.run('Benchmark Cookbook'));
@@ -365,7 +414,7 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 		}
 
 		database.exec('COMMIT');
-		return {
+		summary = {
 			cookbookId,
 			recipes: options.recipes,
 			images: imageDataUrls.length,
@@ -394,6 +443,8 @@ export async function seedBenchmarkDatabase(database: BenchmarkDatabase, options
 			statement.finalize();
 		}
 	}
+	restoreRuntimePragmas(database);
+	return summary;
 }
 
 export async function ensureBenchmarkDatabase(database: BenchmarkDatabase, options: BenchmarkOptions, force = false): Promise<SeedSummary> {
@@ -420,6 +471,8 @@ if (import.meta.main) {
 	const cache = readSeedCache(options);
 	const cached = !args.has('force') && fs.existsSync(options.dbPath) && cache?.version === seedCacheVersion && cache.cacheKey === cacheKey;
 	if (!cached) {
+		resetDisposableSeedFiles(options);
+		process.env.BENCHMARK_DISPOSABLE_SEED = 'true';
 		process.env.BENCHMARK_RESET_PHOTO_VARIANTS = 'true';
 	}
 	const { database } = await import(`../server/index.ts?benchmark-seed=${Date.now()}`);

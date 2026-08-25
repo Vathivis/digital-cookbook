@@ -180,8 +180,9 @@ const staticBasePath = normalizeStaticBasePath(process.env.COOKBOOK_BASE_PATH ??
 
 const db = new Database(resolvedDbPath, { create: true });
 export const database = db;
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA synchronous = NORMAL;');
+const disposableBenchmarkSeed = process.env.BENCHMARK_DISPOSABLE_SEED === 'true';
+db.exec(disposableBenchmarkSeed ? 'PRAGMA journal_mode = MEMORY;' : 'PRAGMA journal_mode = WAL;');
+db.exec(disposableBenchmarkSeed ? 'PRAGMA synchronous = OFF;' : 'PRAGMA synchronous = NORMAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
 type StatementType = ReturnType<Database['prepare']>;
