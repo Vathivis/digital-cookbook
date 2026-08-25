@@ -3,6 +3,7 @@ services:
     build:
       context: .
       args:
+        BUN_VERSION: ${BUN_VERSION:?Load BUN_VERSION from .bun-version}
         VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH: ${PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH:-2000000}
     image: digital-cookbook:local
     ports:

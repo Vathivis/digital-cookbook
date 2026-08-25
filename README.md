@@ -114,15 +114,18 @@ The provided `Dockerfile` builds the Vite frontend and serves it from the same B
 - `/api/*` from the Elysia API
 
 
-```bash
+```powershell
 # Pull prebuilt image from GHCR
 docker pull ghcr.io/vathivis/digital-cookbook:latest
 
 # Run GHCR image (persists SQLite DB in a named volume)
 docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data ghcr.io/vathivis/digital-cookbook:latest
 
+# Load the central Bun version for local builds
+$env:BUN_VERSION = (Get-Content .bun-version -Raw).Trim()
+
 # Build image
-docker build -t digital-cookbook:local .
+docker build --build-arg "BUN_VERSION=$env:BUN_VERSION" -t digital-cookbook:local .
 
 # Run (persists SQLite DB in a named volume)
 docker run --name digital-cookbook -p 4000:4000 -v cookbook_data:/app/data digital-cookbook:local
@@ -143,9 +146,12 @@ Notes:
 
 If you want to tweak the container policy in Compose, use the provided `compose.yml`:
 
-```bash
+```powershell
+$env:BUN_VERSION = (Get-Content .bun-version -Raw).Trim()
 docker compose up --build -d
 ```
+
+On Bash, load the same value with `export BUN_VERSION="$(cat .bun-version)"` before a local Docker or Compose build.
 
 `compose.yml` keeps the same `/health` probe in a plain `wget`-based healthcheck block. Edit that block directly if you want different healthcheck timing or retry policy.
 
