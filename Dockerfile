@@ -16,12 +16,20 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run build
 
-FROM --platform=$TARGETPLATFORM oven/bun:${BUN_VERSION}-alpine AS prod-deps
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-alpine AS prod-deps
 WORKDIR /app
+ARG TARGETARCH
 COPY package.json bun.lockb bun.lock ./
-RUN bun install --frozen-lockfile --production
+RUN case "$TARGETARCH" in \
+      amd64) bun_cpu=x64 ;; \
+      arm64) bun_cpu=arm64 ;; \
+      *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && bun install --frozen-lockfile --production --cpu="$bun_cpu" --os=linux
 
-FROM --platform=$TARGETPLATFORM alpine:3.20 AS runtime
+FROM oven/bun:${BUN_VERSION}-alpine AS target-bun
+
+FROM alpine:3.20 AS runtime
 WORKDIR /app
 ARG VITE_BASE_PATH
 
@@ -36,7 +44,7 @@ ENV COOKBOOK_BASE_PATH=${VITE_BASE_PATH}
 ENV COOKBOOK_DB_PATH=/app/data/cookbook.db
 ENV PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=2000000
 
-COPY --from=prod-deps /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=target-bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/server ./server
 COPY --from=build /app/dist ./dist
