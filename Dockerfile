@@ -1,7 +1,8 @@
+ARG BUN_VERSION
 ARG VITE_BASE_PATH=/cookbook/
 ARG VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=2000000
 
-FROM --platform=$BUILDPLATFORM oven/bun:1.3.9-alpine AS build
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-alpine AS build
 WORKDIR /app
 ARG VITE_BASE_PATH
 ARG VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH
@@ -15,7 +16,7 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run build
 
-FROM --platform=$TARGETPLATFORM oven/bun:1.3.9-alpine AS prod-deps
+FROM --platform=$TARGETPLATFORM oven/bun:${BUN_VERSION}-alpine AS prod-deps
 WORKDIR /app
 COPY package.json bun.lockb bun.lock ./
 RUN bun install --frozen-lockfile --production

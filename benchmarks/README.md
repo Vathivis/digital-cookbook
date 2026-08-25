@@ -57,6 +57,7 @@ Seed caching:
 - If the DB exists and the marker matches the current seed config, the seed step is skipped.
 - Changing recipe count, seed, profile, image mode, thumbnail mode, or the image fixture list invalidates the cache.
 - Use `--force` to rebuild the seed even when the cache matches.
+- On a cache miss, the disposable benchmark DB and its sidecar files are replaced before seeding. Seed creation uses SQLite `MEMORY` journaling with synchronous writes `OFF`, then restores `WAL` and `NORMAL` before measured phases.
 
 Mutation cleanup:
 - Direct API read and mutation paths scale with `--iterations`; this includes `recipes:list`, create, reorder-detail, reorder patch, and cleanup delete.
