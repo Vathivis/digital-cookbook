@@ -1414,6 +1414,10 @@ export const app = new Elysia({
 					runStatement('INSERT INTO notes (recipe_id, content) VALUES (?,?)', id, payload.notes);
 				}
 			}
+			if (payload.tags !== undefined) {
+				runStatement('DELETE FROM recipe_tags WHERE recipe_id=?', id);
+				insertTags(id, payload.tags);
+			}
 		};
 		runTransaction(() => update(parsed.data));
 		return { ok: true };

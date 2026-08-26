@@ -156,6 +156,43 @@ test('recipe tags are returned alphabetically from recipe endpoints', async () =
 	expect(detailPayload.tags).toEqual(expectedTags);
 });
 
+test('recipe patch replaces, preserves, and clears tags', async () => {
+	const createRes = await callApi('/api/recipes', {
+		method: 'POST',
+		body: JSON.stringify({
+			cookbook_id: 1,
+			title: 'Patch Tags Recipe',
+			tags: ['Original', 'Remove me']
+		})
+	});
+	expect(createRes.status).toBe(200);
+	const { id } = (await createRes.json()) as { id: number };
+
+	const patchWithoutTags = await callApi(`/api/recipes/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ title: 'Patch Tags Recipe Updated' })
+	});
+	expect(patchWithoutTags.status).toBe(200);
+	const preservedDetail = await callApi(`/api/recipes/${id}`);
+	await expect(preservedDetail.json()).resolves.toMatchObject({ tags: ['Original', 'Remove me'] });
+
+	const replaceTags = await callApi(`/api/recipes/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ tags: ['Replacement', 'Another'] })
+	});
+	expect(replaceTags.status).toBe(200);
+	const replacedDetail = await callApi(`/api/recipes/${id}`);
+	await expect(replacedDetail.json()).resolves.toMatchObject({ tags: ['Another', 'Replacement'] });
+
+	const clearTags = await callApi(`/api/recipes/${id}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ tags: [] })
+	});
+	expect(clearTags.status).toBe(200);
+	const clearedDetail = await callApi(`/api/recipes/${id}`);
+	await expect(clearedDetail.json()).resolves.toMatchObject({ tags: [] });
+});
+
 test('recipe cooking water rule persists across recipe endpoints and validates positive values', async () => {
 	const omittedRes = await callApi('/api/recipes', {
 		method: 'POST',

@@ -11,6 +11,7 @@
     "test": "bun --env-file=.env.test test",
     "server": "bun server/index.ts",
     "server:dev": "bun --env-file=.env.test server/index.ts",
+    "cookbook": "bun cli/index.ts",
     "dev:full": "concurrently \"bun run server:dev\" \"vite\"",
     "benchmark:seed": "bun benchmarks/seed.ts",
     "benchmark:api": "bun benchmarks/api.ts",
