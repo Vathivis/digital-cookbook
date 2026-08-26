@@ -68,6 +68,14 @@ test('CLI help documents cookbook and recipe operations', async () => {
 	expect(result.stdout.join('\n')).toContain('--file -');
 });
 
+test('CLI help uses silent Bun commands for machine-readable output', async () => {
+	const result = await invoke(['--help']);
+	const output = result.stdout.join('\n');
+
+	expect(output).toContain('bun run --silent cookbook -- cookbook list');
+	expect(output).not.toContain('bun run cookbook --');
+});
+
 test('CLI logs in once and forwards the shared-auth session cookie', async () => {
 	const requests: Request[] = [];
 	const authenticatedFetch: FetchLike = async (input, init) => {
@@ -105,6 +113,39 @@ test('CLI logs in once and forwards the shared-auth session cookie', async () =>
 		'/api/cookbooks'
 	]);
 	expect(JSON.parse(stdout.join('\n'))).toMatchObject({ ok: true });
+});
+
+test('cookbook update returns the stored cookbook name', async () => {
+	const cookbook = successData<{ id: number; name: string }>(
+		await invoke(['cookbook', 'create', '--name', 'Original Name'])
+	);
+	const updated = successData<{ id: number; name: string }>(
+		await invoke(['cookbook', 'update', String(cookbook.id), '--name', '  Normalized Name  '])
+	);
+	const stored = successData<{ id: number; name: string }>(
+		await invoke(['cookbook', 'get', String(cookbook.id)])
+	);
+
+	expect(updated).toEqual({ id: cookbook.id, name: 'Normalized Name' });
+	expect(updated).toEqual(stored);
+});
+
+test('recipe update rejects cookbook locally', async () => {
+	let requestCount = 0;
+	const stderr: string[] = [];
+	const code = await runCli(['recipe', 'update', '1', '--cookbook', '2'], {
+		env: { COOKBOOK_URL: 'http://cookbook.test' },
+		fetchFn: async () => {
+			requestCount += 1;
+			return Response.json({ enabled: false, authenticated: true });
+		},
+		stdout: () => undefined,
+		stderr: (text) => stderr.push(text)
+	});
+
+	expect(code).toBe(2);
+	expect(requestCount).toBe(0);
+	expect(JSON.parse(stderr.join('\n'))).toMatchObject({ ok: false, type: 'usage' });
 });
 
 test('CLI supports cookbook and recipe CRUD, listing, and search', async () => {

@@ -161,7 +161,7 @@ export class CookbookApi {
 			method: 'PATCH',
 			body: JSON.stringify({ name })
 		});
-		return { id, name } satisfies Cookbook;
+		return this.getCookbook(id);
 	}
 
 	async deleteCookbook(id: number) {

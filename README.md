@@ -79,20 +79,20 @@ The Bun CLI wraps the REST API and emits predictable JSON, so agents and scripts
 ```bash
 bun run server
 
-bun run cookbook -- cookbook list
-bun run cookbook -- recipe list --cookbook 1
-bun run cookbook -- recipe search --cookbook 1 --query tomato
-bun run cookbook -- recipe get 7
+bun run --silent cookbook -- cookbook list
+bun run --silent cookbook -- recipe list --cookbook 1
+bun run --silent cookbook -- recipe search --cookbook 1 --query tomato
+bun run --silent cookbook -- recipe get 7
 ```
 
 Create or update recipes with simple flags:
 
 ```bash
-bun run cookbook -- recipe create --cookbook 1 --title "Toast" \
+bun run --silent cookbook -- recipe create --cookbook 1 --title "Toast" \
   --ingredient "2 slices bread" --ingredient "Butter" \
   --step "Toast the bread" --tag "Quick"
 
-bun run cookbook -- recipe update 7 --title "Better Toast" --tag "Breakfast" --tag "Quick"
+bun run --silent cookbook -- recipe update 7 --title "Better Toast" --tag "Breakfast" --tag "Quick"
 ```
 
 On update, supplied ingredient, step, and tag lists replace the corresponding complete stored list. Omitted fields remain unchanged.
@@ -100,12 +100,12 @@ On update, supplied ingredient, step, and tag lists replace the corresponding co
 For the complete recipe shape—including structured ingredients, photos, cooking-water rules, ordered steps, and tags—use a JSON file, inline JSON, or stdin:
 
 ```powershell
-bun run cookbook -- recipe create --file recipe.json
-bun run cookbook -- recipe update 7 --json '{"tags":["Breakfast","Quick"]}'
-Get-Content -Raw recipe-patch.json | bun run cookbook -- recipe update 7 --file -
+bun run --silent cookbook -- recipe create --file recipe.json
+bun run --silent cookbook -- recipe update 7 --json '{"tags":["Breakfast","Quick"]}'
+Get-Content -Raw recipe-patch.json | bun run --silent cookbook -- recipe update 7 --file -
 ```
 
-Cookbook and recipe deletes require `--yes`. Run `bun run cookbook -- --help`, `bun run cookbook -- cookbook --help`, or `bun run cookbook -- recipe --help` for the full command reference.
+Cookbook and recipe deletes require `--yes`. Run `bun run --silent cookbook -- --help`, `bun run --silent cookbook -- cookbook --help`, or `bun run --silent cookbook -- recipe --help` for the full command reference.
 
 The CLI defaults to `http://localhost:4000`. Override it with `COOKBOOK_URL` or `--url`. When shared authentication is enabled, use `COOKBOOK_USERNAME` and `COOKBOOK_PASSWORD` (or the corresponding command options); local `AUTH_USERNAME` and `AUTH_PASSWORD` are also recognized.
 

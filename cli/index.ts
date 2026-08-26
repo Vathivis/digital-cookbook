@@ -50,11 +50,12 @@ const RECIPE_FIELD_OPTIONS = [
 	'clear-notes',
 	'clear-photo'
 ];
+const RECIPE_UPDATE_FIELD_OPTIONS = RECIPE_FIELD_OPTIONS.filter((name) => name !== 'cookbook');
 
 const GENERAL_HELP = `Digital Cookbook CLI
 
 Usage:
-  bun run cookbook -- <resource> <action> [arguments] [options]
+  bun run --silent cookbook -- <resource> <action> [arguments] [options]
 
 Resources and actions:
   cookbook list
@@ -81,13 +82,13 @@ All successful commands emit {"ok":true,"data":...} JSON on stdout.
 Errors emit {"ok":false,"error":...} JSON on stderr and return a non-zero exit code.
 
 Examples:
-  bun run cookbook -- cookbook list
-  bun run cookbook -- recipe list --cookbook 1
-  bun run cookbook -- recipe search --cookbook 1 --query tomato
-  bun run cookbook -- recipe create --cookbook 1 --title "Toast" --ingredient "2 slices bread" --step "Toast it"
-  bun run cookbook -- recipe update 7 --json '{"title":"Better Toast","tags":["Quick"]}'
-  bun run cookbook -- recipe create --file recipe.json
-  bun run cookbook -- recipe update 7 --file -
+  bun run --silent cookbook -- cookbook list
+  bun run --silent cookbook -- recipe list --cookbook 1
+  bun run --silent cookbook -- recipe search --cookbook 1 --query tomato
+  bun run --silent cookbook -- recipe create --cookbook 1 --title "Toast" --ingredient "2 slices bread" --step "Toast it"
+  bun run --silent cookbook -- recipe update 7 --json '{"title":"Better Toast","tags":["Quick"]}'
+  bun run --silent cookbook -- recipe create --file recipe.json
+  bun run --silent cookbook -- recipe update 7 --file -
 `;
 
 const COOKBOOK_HELP = `Cookbook commands
@@ -484,7 +485,7 @@ export async function runCli(rawArguments: string[], runtime: CliRuntime = {}) {
 					data = await api.createRecipe(await recipePayload(parsed.options, true, readPath, readStdin));
 					break;
 				case 'update': {
-					assertAllowedOptions(parsed.options, [...PAYLOAD_SOURCE_OPTIONS, ...RECIPE_FIELD_OPTIONS]);
+					assertAllowedOptions(parsed.options, [...PAYLOAD_SOURCE_OPTIONS, ...RECIPE_UPDATE_FIELD_OPTIONS]);
 					requirePositionals(remainingPositionals, 1, 'recipe update <id> [recipe flags | --file <path> | --json <object>]');
 					const id = positiveInteger(remainingPositionals[0], 'recipe ID');
 					data = await api.updateRecipe(id, await recipePayload(parsed.options, false, readPath, readStdin));
