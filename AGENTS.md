@@ -48,6 +48,23 @@ DELETE /api/recipes/:id
 GET /api/tags (list all tags alphabetically)
 GET /api/ingredients?cookbookId=&q=&limit= (ingredient suggestions, optionally cookbook-scoped)
 
+## Agent-facing CLI
+
+Prefer the Bun CLI over direct SQLite access when reading or mutating cookbook data. It uses the authoritative REST API, preserves validation and transactions, and returns JSON envelopes on stdout.
+
+Start the API with `bun run server`, then discover commands with `bun run --silent cookbook -- --help`.
+
+Common commands:
+- `bun run --silent cookbook -- cookbook list`
+- `bun run --silent cookbook -- recipe list --cookbook ID`
+- `bun run --silent cookbook -- recipe search --cookbook ID --query TERM`
+- `bun run --silent cookbook -- recipe get ID`
+- `bun run --silent cookbook -- recipe create --file recipe.json`
+- `bun run --silent cookbook -- recipe update ID --file patch.json`
+- `bun run --silent cookbook -- recipe delete ID --yes`
+
+Use `--file -` to read recipe JSON from stdin. On update, supplied ingredient, step, and tag lists replace the complete stored lists; omitted fields remain unchanged. Deletes require `--yes`. Set `COOKBOOK_URL` for a non-default server and `COOKBOOK_USERNAME` / `COOKBOOK_PASSWORD` when shared authentication is enabled.
+
 Patterns:
 - Tag & like insertion use INSERT OR IGNORE.
 - Multi-step create/update flows are wrapped in a transaction helper (`runTransaction` with explicit BEGIN/COMMIT/ROLLBACK).
