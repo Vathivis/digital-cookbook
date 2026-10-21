@@ -50,7 +50,7 @@ Recipes track likes and usage counts, with optimistic UI updates to keep interac
 ```
 
 ## Prerequisites
-- [Bun](https://bun.sh/) v1.1+
+- [Bun](https://bun.sh/) v1.4.3 or newer (see `.bun-version` for the tested version)
 - Node-compatible environment (used for tooling via Bun)
 
 > **Note:** Always use `bun` instead of `npm`/`yarn`, and when running PowerShell commands include `-NoLogo -NoProfile` (mirrors automation rules in `AGENTS.md`).
