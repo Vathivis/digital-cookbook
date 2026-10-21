@@ -11,7 +11,11 @@ ENV VITE_PHOTO_THUMBNAIL_MAX_DATA_URL_LENGTH=${VITE_PHOTO_THUMBNAIL_MAX_DATA_URL
 
 # Install deps (cache-friendly)
 COPY package.json bun.lockb bun.lock ./
-RUN bun install --frozen-lockfile
+COPY cli/trusted-ca.ts ./cli/trusted-ca.ts
+COPY scripts/export-trusted-ca.ts ./scripts/export-trusted-ca.ts
+COPY scripts/registry-ca.ts ./scripts/registry-ca.ts
+RUN bun scripts/export-trusted-ca.ts /tmp/cookbook-ca.pem \
+    && NODE_TLS_REJECT_UNAUTHORIZED=1 bun install --frozen-lockfile --cafile=/tmp/cookbook-ca.pem
 
 COPY . .
 RUN bun run build
@@ -20,21 +24,25 @@ FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-alpine AS prod-deps
 WORKDIR /app
 ARG TARGETARCH
 COPY package.json bun.lockb bun.lock ./
+COPY cli/trusted-ca.ts ./cli/trusted-ca.ts
+COPY scripts/export-trusted-ca.ts ./scripts/export-trusted-ca.ts
+COPY scripts/registry-ca.ts ./scripts/registry-ca.ts
 RUN case "$TARGETARCH" in \
       amd64) bun_cpu=x64 ;; \
       arm64) bun_cpu=arm64 ;; \
       *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac \
-    && bun install --frozen-lockfile --production --cpu="$bun_cpu" --os=linux
+    && bun scripts/export-trusted-ca.ts /tmp/cookbook-ca.pem \
+    && NODE_TLS_REJECT_UNAUTHORIZED=1 bun install --frozen-lockfile --production --cpu="$bun_cpu" --os=linux --cafile=/tmp/cookbook-ca.pem
 
 FROM oven/bun:${BUN_VERSION}-alpine AS target-bun
 
-FROM alpine:3.20 AS runtime
+FROM alpine:3.24 AS runtime
 WORKDIR /app
 ARG VITE_BASE_PATH
 
 # Minimal runtime deps for Bun on Alpine.
-RUN apk add --no-cache ca-certificates libstdc++ gcompat
+RUN apk add --no-cache 'ca-certificates>=20261020-r0' libstdc++ gcompat
 
 ENV NODE_ENV=production
 ENV PORT=4000

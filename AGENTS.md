@@ -99,7 +99,7 @@ Patterns:
 - Concurrency: `bun:sqlite` is synchronous; keep handlers fast. No background jobs.
 
 ## 8. Dev Workflow
-Install: bun install
+Install: bun run install:trusted
 Start full stack: bun run dev:full (API on 4000, Vite on 5173, auto proxy)
 Test: bun run test
 Lint: bun run lint
