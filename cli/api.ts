@@ -1,3 +1,5 @@
+import { getTrustedCertificates } from './trusted-ca';
+
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type Cookbook = {
@@ -86,7 +88,13 @@ export class CookbookApi {
 		if (this.cookie) headers.set('Cookie', this.cookie);
 
 		try {
-			return await this.fetchFn(`${this.baseUrl}${path}`, { ...init, headers });
+			const options = {
+				...init,
+				headers,
+				// Bun's native fetch does not use tls.setDefaultCACertificates().
+				tls: { ca: getTrustedCertificates(), rejectUnauthorized: true }
+			};
+			return await this.fetchFn(`${this.baseUrl}${path}`, options);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			throw new CookbookApiError(

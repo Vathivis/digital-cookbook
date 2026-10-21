@@ -58,7 +58,7 @@ Recipes track likes and usage counts, with optimistic UI updates to keep interac
 ## Quickstart
 ```bash
 # Install dependencies
-bun install
+bun run install:trusted
 
 # Start API + Vite dev servers concurrently (API:4000, Vite:5173; auth disabled)
 bun run dev:full
@@ -108,6 +108,22 @@ Get-Content -Raw recipe-patch.json | bun run --silent cookbook -- recipe update 
 Cookbook and recipe deletes require `--yes`. Run `bun run --silent cookbook -- --help`, `bun run --silent cookbook -- cookbook --help`, or `bun run --silent cookbook -- recipe --help` for the full command reference.
 
 The CLI defaults to `http://localhost:4000`. Override it with `COOKBOOK_URL` or `--url`. When shared authentication is enabled, use `COOKBOOK_USERNAME` and `COOKBOOK_PASSWORD` (or the corresponding command options); local `AUTH_USERNAME` and `AUTH_PASSWORD` are also recognized.
+
+## TLS trust and the October 2026 eMudhra incident
+
+The CLI and CI/container dependency installation exclude the compromised eMudhra CA keys and the roots that can authenticate them, including the AAA cross-sign. The CLI passes a filtered CA list directly to Bun's native `fetch`; changing `tls.setDefaultCACertificates()` alone does not protect that path in Bun 1.4.3. Other trusted certificates remain available, including PEM certificates from `NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, and OpenSSL hashed `SSL_CERT_DIR` directories.
+
+For local dependency installation, generate the same filtered bundle first. Existing registry CA settings in `.npmrc` and `bunfig.toml` are preserved and filtered as well:
+
+```powershell
+bun run install:trusted
+```
+
+The command creates an ignored `.tmp-tests/cookbook-ca.pem` bundle before installation. The container uses Alpine 3.24 with `ca-certificates` version 20261020-r0 or newer. Rebuild and redeploy the image to apply these changes to a running installation. Browser and reverse-proxy trust stores are managed separately; this patch does not change the homelab host or its certificate configuration. Servers that depend on the excluded roots need a certificate from another trusted hierarchy.
+
+Set `COOKBOOK_TLS_INTEGRATION=1` when running `bun run test` to enable the five public HTTPS checks in `tests/cli/tls.test.ts`. The private-CA check also runs in the normal test suite.
+
+References: [incident and affected keys](https://emudhra.we-have-a-problem.com/), [Bun's upstream CA update](https://github.com/oven-sh/bun/pull/46159).
 
 ## Optional Auth
 You can enable a simple shared login (one username/password from env, no user database).
