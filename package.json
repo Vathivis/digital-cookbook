@@ -1,7 +1,7 @@
 {
   "name": "digital-cookbook",
   "private": true,
-  "version": "1.0.28",
+  "version": "1.0.29",
   "type": "module",
   "scripts": {
     "install:trusted": "bun scripts/export-trusted-ca.ts .tmp-tests/cookbook-ca.pem && NODE_TLS_REJECT_UNAUTHORIZED=1 bun install --frozen-lockfile --cafile=.tmp-tests/cookbook-ca.pem",
